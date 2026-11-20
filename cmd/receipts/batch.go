@@ -62,7 +62,7 @@ func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 		fmt.Fprintln(stderr, "Check interrupted.")
 		return 130
 	}
-	return deliverJSON(stdout, stderr, struct {
+	return deliverJSON(ctx, stdout, stderr, struct {
 		Schema  int           `json:"schema_major"`
 		Results []batchResult `json:"results"`
 	}{Schema: 1, Results: results})

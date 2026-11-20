@@ -37,7 +37,7 @@ Consider the claim “these two lines occur in this file.” Finding the lines e
 ### Can I diagnose an installed copy privately? · PA01–PA04, T04
 
 - [x] Read the revision and dirty-tree flag from a clean local debug build with go version -m.
-- [x] Stop at main.run in a symbol-bearing build and inspect its caller on Linux.
+- [x] Stop at main.execute in a symbol-bearing build and inspect its caller on Linux.
 - [x] Map a downloaded release to exact source, Go version, build flags and architecture.
 - [x] Rebuild that revision with symbols and demonstrate a source breakpoint. GoReleaser requests stripped binaries for distribution.
 - [ ] Reproduce a report on its actual OS or record the native test gap.

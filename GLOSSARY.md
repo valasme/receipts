@@ -4,6 +4,8 @@ Maintainers use a receipt to review the factual statements in a submission.
 
 **Claim** — One statement with a defined scope that evidence could confirm or contradict.
 
+**File-change claim** — The assertion that a file differs at one exact path between a comparison commit and a head commit. A difference can be a change in presence, contents, or Git mode.
+
 **Evidence** — An observation a maintainer can inspect, tied to the revision and scope of the claim.
 
 **Verdict** — The result for one claim. Verified means the evidence establishes the claim. Contradicted means the evidence rules it out. Can't check means the available evidence leaves the claim unresolved.

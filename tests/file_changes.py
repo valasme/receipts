@@ -69,7 +69,8 @@ def check_changes(binary, repo, comparison, head, expected):
         assert section.startswith(
             f"Submission line {line}\n{verdict} · file changed\nPath {json.dumps(path)}\n"
         ), section
-        assert section.rstrip("\n").endswith(f"Statement · {json.dumps(claims[line - 1]['statement'])}"), section
+        assert "Claim checked · The file at this exact path changed between the two commits.\n" in section, section
+        assert section.rstrip("\n").endswith(f"Submission statement · {json.dumps(claims[line - 1]['statement'])}"), section
         for label, rev in (("Comparison", comparison), ("Head", head)):
             assert f"{label} commit {rev}\n" in section, section
         receipts[path] = section
@@ -189,16 +190,24 @@ def validate_proposals(binary, repo, comparison, head):
     assert result.returncode == 2 and not result.stdout and b"repository-relative file path" in result.stderr, result
 
     quote = {"path": "guide.txt", "quote": "New guide\n", "source_lines": [1, 4]}
-    claim = {"path": "guide.txt", "statement": "This PR\r\nupdates `guide.txt`.", "source_lines": [5, 6]}
+    claim = {"path": "guide.txt", "statement": "This PR\r\nupdates `guide.txt` and makes export twice as fast.", "source_lines": [5, 6]}
+    submission = "From `guide.txt`:\r\n```text\r\nNew guide\r\n```\r\n" + claim["statement"]
+    proposal = {"claims": [quote], "file_changes": [claim], "unresolved": []}
+    blob = git(repo, "rev-parse", f"{head}:guide.txt")
+    result = review(binary, repo, None, blob, submission, proposal)
+    assert result.returncode == 2 and not result.stdout and b"require --compare" in result.stderr, result
     result = review(
-        binary, repo, comparison, head,
-        "From `guide.txt`:\r\n```text\r\nNew guide\r\n```\r\n" + claim["statement"],
-        {"claims": [quote], "file_changes": [claim], "unresolved": []},
+        binary, repo, comparison.upper(), head.upper(),
+        submission, proposal,
     )
     assert result.returncode == 0 and not result.stderr, result
     preview = result.stdout.decode()
+    assert preview.startswith(f"Review preview\nRequested commit {head}\n"), preview
+    assert f"Comparison commit {comparison}\n" in preview and f"Head commit {head}\n" in preview, preview
     assert "Submission lines 1–4\nVerified · exact source quote" in preview, preview
     assert "Submission lines 5–6\nVerified · file changed" in preview, preview
+    assert "Claim checked · The file at this exact path changed between the two commits.\n" in preview, preview
+    assert 'Submission statement · "This PR\\nupdates `guide.txt` and makes export twice as fast."' in preview, preview
 
 
 def run(binary, repo):

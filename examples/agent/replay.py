@@ -104,14 +104,16 @@ def check_preview(binary, repo, rev, proposal_file, claims):
             input=item["quote"].encode(), capture_output=True, check=True, timeout=20,
         )
         expected += f"\nSubmission lines {start}–{end}\n" + replay_result.stdout.decode()
-        expected += f"Citation · {json.dumps(lines[start - 1], ensure_ascii=False)}\n"
+        expected += "Claim checked · The committed file contains the exact quotation.\n"
+        expected += f"Submission citation · {json.dumps(lines[start - 1], ensure_ascii=False)}\n"
     expected += '\nSubmission line 20\nUnresolved · "This change makes export twice as fast."\n'
     assert preview == expected, preview
 
+    first_claim_index = min(range(len(claims)), key=lambda index: claims[index]["source_lines"][0])
     changed = submission.replace(b"Export starts offline.", b"Export starts online.", 1)
     result = review(binary, repo, rev, changed, proposal_file)
     assert result.returncode == 2 and result.stdout == b"", result
-    assert b"proposal claim 1 does not match" in result.stderr, result
+    assert f"proposal claim {first_claim_index + 1} does not match".encode() in result.stderr, result
 
     extra.write_bytes(json.dumps({"claims": [
         {"path": "guide.txt", "quote": "Export starts offline.\r\r\n", "source_lines": [1, 4]},

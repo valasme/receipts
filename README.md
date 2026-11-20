@@ -1,6 +1,6 @@
 # Receipts
 
-Check whether an exact quotation appears in a source file at a particular Git commit. Receipts reads local Git objects and returns the evidence for one claim. Your working copy can contain newer, uncommitted edits.
+Check whether an exact quotation appears in a source file at a particular Git commit. Receipts reads local Git objects, so uncommitted edits do not affect the evidence. The development build can also preview quotations and exact-path file changes alongside the submission lines that proposed them.
 
 ## Install and run
 
@@ -107,6 +107,8 @@ receipts review --submission submission.md --proposal proposal.json --rev COMMIT
 
 The preview shows where each checked quote or unresolved statement appears in the submission. Each quote also shows its citation and Git evidence. A proposal whose source lines or text disagree with the submission returns an input error. Review the proposal and the surrounding submission text for context. Run `python examples/agent/replay.py ./receipts-demo.exe` with a development binary to try the worked example.
 
+Previews include citation lines and verbatim statements from the submission. Review that text and the repository paths before sharing a preview.
+
 To check whether a file changed, add a file-change proposal and pass `--compare COMMIT` alongside the head commit in `--rev`. The preview shows evidence for the exact path at both commits. [File-change walkthrough](examples/agent/README.md#check-whether-a-file-changed)
 
 ## Read the result
@@ -114,6 +116,8 @@ To check whether a file changed, add a file-change proposal and pass `--compare 
 **Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.
 
 Text is the default. Use `--format markdown` for a pasteable block and `--format json` for schema-major-1 output. All three verdicts exit 0. Invalid inputs exit 2. Output failures exit 1. Check both the exit status and complete JSON before using a receipt. A receipt can reveal a private path or guessable quote digest.
+
+Use `receipts check --help` for quotation input and output options, or `receipts review --help` for the review preview. Interrupting a check or review with Ctrl+C exits 130.
 
 ## Supported storage and limits
 

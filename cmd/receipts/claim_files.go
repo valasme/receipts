@@ -14,7 +14,7 @@ import (
 
 const maxClaimFile = 768 << 10
 
-var errInputRead = errors.New("cannot read input within the size limit")
+var errInputTooLarge = errors.New("input exceeds the size limit")
 
 type quotation struct {
 	path string
@@ -39,8 +39,10 @@ func readInput(ctx context.Context, stdin io.Reader, name string, limit int, lab
 			reader = file
 		}
 		data, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
-		if err != nil || len(data) > limit {
-			err = errInputRead
+		if len(data) > limit {
+			err = errInputTooLarge
+		} else if err != nil {
+			err = errors.New("cannot read " + label + " input; check that it is readable")
 		}
 		done <- result{data, err}
 	}()
