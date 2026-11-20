@@ -6,7 +6,21 @@ GitHub published the immutable prerelease on 2026-11-20 at 19:02 UTC. The tagged
 
 All 13 public assets matched GitHub's digests. All 12 files listed in the attested checksum manifest matched the listed hashes. The SHA-256 of the manifest itself is `e6364759df3af594cf05638ac87dfe96cde3a5298180d663c8c12afd15ebb49e`. The manifest and build record were verified against the release workflow and tagged commit. Candidate checks compared the Apache license and third-party notices byte for byte inside the installed archives, Debian and RPM packages, and through the installed CLI. The manifest drives the same native install suite for the public downloads. [Install and notice locations](release.md)
 
-On Linux amd64, the archive and pinned Go module both went from pre.1 to pre.2 and back to pre.1 in isolated directories. A frozen Git fixture produced the expected receipt at each step. The test removed the Go executable and archive selection after rollback. The remaining channel and architecture upgrade evidence belongs to [issue #13](https://github.com/valasme/receipts/issues/13).
+### Upgrade, rollback and removal
+
+All 22 installer and native target combinations completed the transition from v0.0.1-pre.1 to v0.0.1-pre.2, back to v0.0.1-pre.1, and through removal. Each step checked the exact version, ran help with outbound network blocked, and replayed the frozen Git fixture byte for byte. The test ran from a temporary directory outside the source checkout. [Public transition matrix](https://github.com/valasme/receipts/actions/runs/44800250124) · [Workflow revision](https://github.com/valasme/receipts/commit/13cc444)
+
+| Channel | Linux amd64 | Linux arm64 | macOS Intel | macOS Apple Silicon | Windows x64 | Windows ARM64 | Transition |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| GitHub archive | Pass | Pass | Pass | Pass | Pass | Pass | Replace the extracted directory |
+| Pinned Go module | Pass | Pass | Pass | Pass | Pass | Pass | Replace the executable with the named module tag |
+| Debian | Pass | Pass | — | — | — | — | Install each pinned package in place with dpkg |
+| RPM | Pass | Pass | — | — | — | — | RPM update and explicit older-package restore in an isolated root |
+| Homebrew | — | — | Pass | Pass | — | — | Replace via uninstall and install with the named local formula |
+| WinGet | — | — | — | — | Pass | Pass | Replace via uninstall and install with the named local manifest |
+| Scoop | — | — | — | — | Pass | Pass | Replace via uninstall and install with the named local manifest |
+
+The tagged source commits, signed build records and signed checksum manifests were verified for both releases. The test matched 12 manifest entries per version. It compared installed binary bytes to the exact native archive, or inspected the pinned module identity and GOOS/GOARCH from Go build metadata. Go reports the version with a leading `v`. Packaged builds omit the leading `v`. Linux used a network namespace, macOS a deny-network sandbox and Windows a per-executable active firewall rule. The restored executable was removed through the same installer and its installed path checked. Stable package indexes and unattended updates remain outside this qualification.
 
 GitHub created an empty draft during the tagged run before the release list exposed it. Retrying the staging job resumed the existing draft using the qualified artifact. The package bytes and Git tag remained identical. Subsequent workflow revisions retry draft discovery briefly after successful creation. Platform signing and provider recovery are deferred until the owner approves v1. [Owner decision](adr/0002-defer-native-signing-until-v1.md)
 
