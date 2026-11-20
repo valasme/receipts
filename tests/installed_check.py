@@ -56,7 +56,7 @@ def offline_receipt(binary, version):
             prefix = ["sandbox-exec", "-p", "(version 1) (allow default) (deny network*)"]
         else:
             prefix = []
-            argv = ["pwsh", "-NoProfile", "-File", Path(__file__).with_name("offline_help.ps1"),
+            argv = ["pwsh", "-NoProfile", "-File", Path(__file__).with_name("offline_receipt.ps1"),
                     "-Binary", executable, "-Repo", repo, "-Revision", REV,
                     "-Quote", quote, "-EmptyPath", empty]
         if prefix:
@@ -67,7 +67,7 @@ def offline_receipt(binary, version):
 
 
 def qualify(binary, version, *, expected=None, alias=None, offline=True):
-    
+
     if expected is not None and binary.read_bytes() != expected.read_bytes():
         raise ValueError(f"{binary}: installed binary differs from the qualified archive")
     for executable in [binary] if alias is None else [binary, alias]:

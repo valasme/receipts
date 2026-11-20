@@ -97,7 +97,7 @@ Rebuilt the tagged v0.0.1-pre.1 source and stopped in main.execute, with main.ma
 
 ## Local CI parity
 
-Use a clean checkout with Git, Python 3.11 or newer and Go. Run the same native source check that CI runs with the exact minimum compiler:
+Use a clean checkout with Git, Python 3.11 or newer and Go. Run the same native source check that CI runs with the exact minimum compiler.
 
 ```sh
 GOTOOLCHAIN=go1.25.0 python tests/verify_source.py .

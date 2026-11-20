@@ -204,10 +204,10 @@ jobs:
           persist-credentials: false
       - name: Download and authenticate both public previews
         shell: bash
+        working-directory: ${{ runner.temp }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd "$RUNNER_TEMP"
           python "$GITHUB_WORKSPACE/tests/preview_transition.py" retrieve "$PREVIOUS_TAG" "$CURRENT_TAG"
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         if: matrix.channel == 'go'
@@ -237,6 +237,6 @@ jobs:
         run: ./tests/windows_installers.ps1 scoop
       - name: Exercise install, upgrade, restore and removal from outside the checkout
         shell: bash
+        working-directory: ${{ runner.temp }}
         run: |
-          cd "$RUNNER_TEMP"
           python "$GITHUB_WORKSPACE/tests/preview_transition.py" transition "$CHANNEL" "$PREVIOUS_TAG" "$CURRENT_TAG"

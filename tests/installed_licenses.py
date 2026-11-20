@@ -8,9 +8,9 @@ SOURCE = Path(__file__).resolve().parents[1]
 NOTICES = "THIRD-PARTY-NOTICES.txt"
 
 
-def verify(binary, license_file=None):
-    license_text = (SOURCE / "LICENSE").read_bytes()
-    notices = (SOURCE / NOTICES).read_bytes()
+def verify(binary, license_file=None, *, source=SOURCE):
+    license_text = (source / "LICENSE").read_bytes()
+    notices = (source / NOTICES).read_bytes()
     output = subprocess.check_output([binary.resolve(), "--licenses"], timeout=20)
     if output != license_text + b"\n" + notices:
         raise ValueError(f"{binary}: license output differs from source")

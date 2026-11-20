@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from installed_check import invoke, native_target, output, qualify
+from installed_licenses import verify as verify_licenses
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packaging"))
 from bundle import (
@@ -85,6 +86,11 @@ def qualify_go(binary, bundle, channel):
             raise ValueError(f"Go module version is {module}, expected {version}")
     print(f"Go install ({channel}): {compiler}, {module}, {TARGET}/{ARCH}", flush=True)
     qualify(binary, version)
+    if bundle.record["source_tag"] != HISTORICAL_WITHOUT_NOTICES:
+        with tempfile.TemporaryDirectory(prefix="receipts-go-notices-") as directory:
+            documents = Path(directory)
+            extract_native(bundle, TARGET, ARCH, documents)
+            verify_licenses(binary, source=documents)
 
 
 def verify_rpm(path):
@@ -110,7 +116,7 @@ class Installer:
             rpm_root = self.root / "rpm"
             rpm_root.mkdir()
             self.rpm = ["sudo", "-n", "rpm", "--root", rpm_root]
-            invoke(*self.rpm, "--initdb", label="Initialize isolated RPM root")
+            self.rpm_ready = False
             self.binary = rpm_root / "usr/bin/receipts"
             self.license = rpm_root / "usr/share/licenses/receipts/LICENSE"
         elif channel == "brew":
@@ -147,7 +153,7 @@ class Installer:
             return subprocess.run(
                 ["dpkg-query", "-W", "receipts"], capture_output=True, timeout=20,
             ).returncode == 0
-        if self.channel == "rpm":
+        if self.channel == "rpm" and self.rpm_ready:
             return subprocess.run(
                 [*self.rpm, "-q", "receipts"], capture_output=True, timeout=20,
             ).returncode == 0
@@ -195,6 +201,9 @@ class Installer:
         elif self.channel == "rpm":
             package = bundle.asset(TARGET, ARCH, "rpm")
             verify_rpm(package)
+            if not self.rpm_ready:
+                self.rpm_ready = True
+                invoke(*self.rpm, "--initdb", label="Initialize isolated RPM root")
             options = ["--oldpackage"] if phase == "restore" else []
             invoke(*self.rpm, "--nodeps", "--ignorearch", "-U", *options, package,
                    label="Install RPM", timeout=90)
