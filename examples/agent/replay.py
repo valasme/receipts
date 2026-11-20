@@ -10,7 +10,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-
 HERE = Path(__file__).resolve().parent
 ENV = {
     **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
@@ -77,7 +76,7 @@ def review_command(binary, repo, rev, proposal):
 def review(binary, repo, rev, submission, proposal):
     return subprocess.run(
         review_command(binary, repo, rev, proposal),
-        input=submission, capture_output=True, timeout=20,
+        check=False, input=submission, capture_output=True, timeout=20,
     )
 
 
@@ -142,7 +141,7 @@ def exercise_bundled_preview(binary, repo, rev, proposal_file, claims, submissio
     result = subprocess.run(
         [binary, "review", "--repo", repo, "--rev", rev, "--rev", rev,
          "--submission", "-", "--proposal", extra],
-        input=b"No exact quotes.\n", capture_output=True, timeout=20,
+        check=False, input=b"No exact quotes.\n", capture_output=True, timeout=20,
     )
     assert result.returncode == 2 and result.stdout == b"", result
 

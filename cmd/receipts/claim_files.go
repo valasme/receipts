@@ -23,6 +23,9 @@ type quotation struct {
 }
 
 func readInput(ctx context.Context, stdin io.Reader, name string, limit int, label string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	type result struct {
 		data []byte
 		err  error

@@ -24,7 +24,7 @@ def suite(repo):
         result = subprocess.run(
             [binary, "check", "--repo", repo, "--rev", invalid_rev,
              "--path", name, "--quote-file", "-"],
-            input=b"a",
+            check=False, input=b"a",
             capture_output=True,
             timeout=20,
         )

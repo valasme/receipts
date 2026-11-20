@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from acceptance import binary
-from git_fixture import git_bytes, git
+from git_fixture import git, git_bytes
 
 REV = "37fdc0ff48840283d170b8c2fac06d2e230a76e7"
 BLOB = "42b7aba7a9b41f406f1a40c209f559faf0c42285"

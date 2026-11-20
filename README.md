@@ -115,7 +115,7 @@ To check whether a file changed, add a file-change proposal and pass `--compare 
 
 **Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.
 
-Text is the default. Use `--format markdown` for a pasteable block and `--format json` for schema-major-1 output. All three verdicts exit 0. Invalid inputs exit 2. Output failures exit 1. Check both the exit status and complete JSON before using a receipt. A receipt can reveal a private path or guessable quote digest. [Receipt schema and compatibility](schema/README.md)
+Text is the default. Use `--format markdown` for a pasteable block and `--format json` for schema-major-1 output. All three verdicts exit 0. Invalid inputs exit 2. Output failures exit 1. Check both the exit status and complete JSON before using a receipt. The five-second evidence deadline starts after input admission. A pipe on stdin may wait for its writer. Press Ctrl+C to interrupt and discard any partial output. A receipt can reveal a private path or guessable quote digest. [Receipt schema and compatibility](schema/README.md)
 
 Use `receipts check --help` for quotation input and output options, or `receipts review --help` for the review preview. Interrupting a check or review with Ctrl+C exits 130.
 

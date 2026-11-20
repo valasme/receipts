@@ -15,7 +15,8 @@ binary = Path(sys.argv[1]).resolve()
 validator = None
 if os.getenv("RECEIPTS_VALIDATE_SCHEMA") == "1":
     from jsonschema import ValidationError
-    from receipt_contract import validate_quote, validator as load_validator
+    from receipt_contract import validate_quote
+    from receipt_contract import validator as load_validator
 
     validator = load_validator("receipt-v1.json")
 
@@ -62,7 +63,7 @@ def suite(repo, packed):
     git(repo, "config", "core.autocrlf", "false")
     (repo / "src").mkdir()
     (repo / "src/a.txt").write_bytes(b"first\r\nBlue\r\nBlue\r\nlast")
-    (repo / "src/multiline.txt").write_bytes("first\ncafé\n  second\nlast".encode("utf-8"))
+    (repo / "src/multiline.txt").write_bytes("first\ncafé\n  second\nlast".encode())
     (repo / "bin").write_bytes(b"x\x00y")
     (repo / "invalid").write_bytes(b"\xff")
     (repo / "pointer").write_bytes(

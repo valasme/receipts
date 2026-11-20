@@ -1,7 +1,18 @@
 import json
 import unittest
 
-from github import CONSENT, DEMO, MARKER, STALE, ApiFailure, existing, preview, publish, source, submission_number
+from github import (
+    CONSENT,
+    DEMO,
+    MARKER,
+    STALE,
+    ApiFailure,
+    existing,
+    preview,
+    publish,
+    source,
+    submission_number,
+)
 
 
 class Demo:

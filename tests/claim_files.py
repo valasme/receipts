@@ -16,7 +16,7 @@ from git_fixture import git
 def invoke(repo, *args, data=None, exit_code=0):
     process = subprocess.run(
         [binary, "check", "--repo", repo, *args],
-        input=data,
+        check=False, input=data,
         capture_output=True,
         timeout=20,
     )

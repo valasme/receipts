@@ -8,7 +8,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 from git_fixture import env, git_bytes
 
 
@@ -36,7 +35,7 @@ def review(binary, repo, comparison, head, body, proposal):
     return subprocess.run(
         [binary, "review", "--repo", repo, "--rev", head, *pin,
          "--submission", "-", "--proposal", proposal_file],
-        input=body.encode(), capture_output=True, timeout=20,
+        check=False, input=body.encode(), capture_output=True, timeout=20,
     )
 
 
@@ -129,7 +128,7 @@ def compare_modes_and_kinds(binary, repo):
 def unavailable_objects(binary, repo, comparison, head):
     missing_commit = "1" * 40
     absent = subprocess.run(
-        ["git", "-C", repo, "cat-file", "-e", missing_commit], env=env, capture_output=True, timeout=20,
+        ["git", "-C", repo, "cat-file", "-e", missing_commit], check=False, env=env, capture_output=True, timeout=20,
     )
     assert absent.returncode != 0, absent
     missing = check_changes(binary, repo, missing_commit, head, {"guide.txt": "Can't check"})
@@ -140,7 +139,7 @@ def unavailable_objects(binary, repo, comparison, head):
     loose.chmod(0o600)
     loose.unlink()
     absent = subprocess.run(
-        ["git", "-C", repo, "cat-file", "-e", blob], env=env, capture_output=True, timeout=20,
+        ["git", "-C", repo, "cat-file", "-e", blob], check=False, env=env, capture_output=True, timeout=20,
     )
     assert absent.returncode != 0, absent
     missing = check_changes(binary, repo, comparison, head, {"guide.txt": "Can't check"})
@@ -239,7 +238,7 @@ def literal_proposals(binary, repo, comparison, head):
     exact = commit(repo, {odd_path: b"exact final line"}, head)
     raw = subprocess.run(
         [binary, "check", "--repo", repo, "--rev", exact, "--path", odd_path, "--quote-file", "-"],
-        input=b"exact final line", capture_output=True, timeout=20,
+        check=False, input=b"exact final line", capture_output=True, timeout=20,
     )
     assert raw.returncode == 0 and raw.stdout.startswith(b"Verified"), raw
     bad = review(binary, repo, None, exact, f"`{odd_path}`:\n```\nexact final line\n```", {

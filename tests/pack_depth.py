@@ -7,7 +7,7 @@ import zlib
 from pathlib import Path
 
 from acceptance import check
-from git_fixture import git_bytes, git
+from git_fixture import git, git_bytes
 
 
 def suite(repo):
