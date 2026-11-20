@@ -322,11 +322,18 @@ class PrepareBundle(unittest.TestCase):
     def test_scan_requires_exact_targets_and_compiler(self):
         with tempfile.TemporaryDirectory() as directory:
             dist = Path(directory)
-            for system, arch in TARGETS:
+            artifacts = []
+            for system, arch in sorted(TARGETS):
                 folder = dist / f"receipts_{system}_{arch}"
                 folder.mkdir()
-                if (system, arch) != ("darwin", "arm64"):
-                    (folder / ("receipts.exe" if system == "windows" else "receipts")).touch()
+                executable = folder / ("receipts.exe" if system == "windows" else "receipts")
+                executable.touch()
+                artifacts.append({
+                    "type": "Binary", "goos": system, "goarch": arch,
+                    "path": "dist/" + executable.relative_to(dist).as_posix(),
+                })
+            metadata = dist / "artifacts.json"
+            metadata.write_text(json.dumps(artifacts[1:]))
 
             def info(file):
                 target = tuple(file.parent.name.split("_")[1:])
@@ -335,11 +342,17 @@ class PrepareBundle(unittest.TestCase):
             with patch("toolchain.build_info", side_effect=info):
                 with self.assertRaisesRegex(ValueError, "Missing binary scan targets"):
                     release_binaries(dist, COMPILER, COMMIT)
-                (dist / "receipts_darwin_arm64/receipts").touch()
+                metadata.write_text(json.dumps(artifacts))
                 self.assertEqual(len(release_binaries(dist, COMPILER, COMMIT)), 6)
                 with self.assertRaisesRegex(ValueError, "observed go1.27.4"):
                     release_binaries(dist, "go1.25.0", COMMIT)
-                (dist / "receipts_darwin_arm64/other").touch()
+                extra = dist / "receipts_darwin_arm64/other"
+                extra.touch()
+                artifacts.append({
+                    "type": "Binary", "goos": "darwin", "goarch": "arm64",
+                    "path": "dist/" + extra.relative_to(dist).as_posix(),
+                })
+                metadata.write_text(json.dumps(artifacts))
                 with self.assertRaisesRegex(ValueError, "Unexpected or duplicate executable"):
                     release_binaries(dist, COMPILER, COMMIT)
 

@@ -9,7 +9,6 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-
 from bundle import (
     INSTALLERS, MANIFEST, RECORD, VERSION, digest, extract_native,
     read_manifest, release_assets, verify_bundle,

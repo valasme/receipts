@@ -53,6 +53,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       revision: ${{ needs.resolve.outputs.commit }}
+      historical: ${{ contains(fromJSON('["v0.0.1-pre.1","v0.0.1-pre.2"]'), inputs.candidate_tag || github.ref_name) }}
 
   package:
     needs: [resolve, validate]

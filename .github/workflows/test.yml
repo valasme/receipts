@@ -8,11 +8,15 @@ on:
       revision:
         type: string
         required: false
+      historical:
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025, windows-11-arm]
     timeout-minutes: 15
@@ -21,25 +25,38 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
           ref: ${{ inputs.revision || github.sha }}
+          path: source
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version-file: go.mod
+          go-version: '1.25.0'
           cache: false
-      - run: go env GOOS GOARCH
-      - run: go vet ./...
-      - run: go test -count=1 ./...
-      - run: go build -o receipts-test.exe ./cmd/receipts
-      - run: python tests/acceptance.py ./receipts-test.exe
-      - run: python tests/claim_files.py ./receipts-test.exe
-      - run: python tests/file_changes.py ./receipts-test.exe
-      - run: python examples/agent/replay.py ./receipts-test.exe
-      - run: python tests/storage.py ./receipts-test.exe
-      - run: python tests/golden.py ./receipts-test.exe
-      - run: python tests/edge_cases.py ./receipts-test.exe
-      - run: python tests/pack_depth.py ./receipts-test.exe
-      - run: python tests/evaluate.py ./receipts-test.exe
-      - run: go run ./cmd/receipts --version
+      - shell: bash
+        env:
+          GOTOOLCHAIN: local
+          HISTORICAL: ${{ inputs.historical || false }}
+        run: |
+          args=()
+          if [[ "$HISTORICAL" == true ]]; then args+=(--historical); fi
+          python tests/verify_source.py source "${args[@]}"
+  workflow-lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version: '1.25.0'
+          cache: false
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
   diagnostics:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -57,7 +74,9 @@ jobs:
       - run: go test ./internal/check -run '^$' -fuzz '^FuzzLookup$' -fuzztime=5s
       - run: go test ./internal/check -run '^$' -fuzz '^FuzzDelta$' -fuzztime=5s
       - run: python -m unittest discover -s pilot -v
-      - run: python -m unittest discover -s packaging -v
+      - run: |
+          if [[ -d packaging ]]; then python -m unittest discover -s packaging -v; fi
+          python -m unittest discover -s tests -p "test_installed*.py" -v
       - name: Validate actual receipts against the versioned schema
         run: |
           python -m venv "$RUNNER_TEMP/schema"

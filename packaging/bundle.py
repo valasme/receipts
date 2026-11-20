@@ -59,7 +59,7 @@ def digest(path):
 def read_manifest(path):
     # Accept LF and CRLF, with exactly two ASCII spaces and one flat basename.
     entries = {}
-    content = path.read_text(encoding="ascii").removesuffix("\n")
+    content = path.read_bytes().decode("ascii").replace("\r\n", "\n").removesuffix("\n")
     for line in content.split("\n"):
         match = re.fullmatch(f"({SHA256})  ([A-Za-z0-9][A-Za-z0-9._-]*)", line)
         if not match or match[2] in entries:
@@ -152,7 +152,7 @@ def extract_native(bundle, system, arch, dest):
             if len(members) != len(names) or {m.name for m in members} != names:
                 raise ValueError(f"Unexpected or duplicate tar members in {path.name}")
             for member in members:
-                if not member.isreg() or member.mode & ~0o777:
+                if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE) or member.mode & ~0o777:
                     raise ValueError(f"Expected a regular tar member: {member.name}")
                 if member.name == exe and not member.mode & stat.S_IXUSR:
                     raise ValueError(f"The packaged binary lacks owner execute permission: {path.name}")

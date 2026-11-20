@@ -11,7 +11,7 @@ NOTICES = "THIRD-PARTY-NOTICES.txt"
 def verify(binary, license_file=None):
     license_text = (SOURCE / "LICENSE").read_bytes()
     notices = (SOURCE / NOTICES).read_bytes()
-    output = subprocess.check_output([binary.resolve(), "--licenses"])
+    output = subprocess.check_output([binary.resolve(), "--licenses"], timeout=20)
     if output != license_text + b"\n" + notices:
         raise ValueError(f"{binary}: license output differs from source")
     if license_file is not None:

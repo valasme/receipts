@@ -1,7 +1,8 @@
 """Read the compiler and target selected for the exact Go executable."""
 
-from pathlib import Path
+import json
 import subprocess
+from pathlib import Path
 
 from bundle import TARGETS
 
@@ -22,15 +23,21 @@ def build_info(binary):
 
 
 def release_binaries(dist, compiler, commit):
-    files = sorted(
-        p for directory in dist.glob("receipts_*") if directory.is_dir()
-        for p in directory.iterdir()
-    )
+    artifacts = json.loads((dist / "artifacts.json").read_bytes())
     binaries = {}
-    for binary in files:
+    for artifact in artifacts:
+        if artifact["type"] != "Binary":
+            continue
+        relative = Path(artifact["path"]).relative_to("dist")
+        if len(relative.parts) != 2 or ".." in relative.parts:
+            raise ValueError(f"Unexpected GoReleaser binary path: {relative}")
+        binary = dist / relative
+        if binary.is_symlink() or not binary.is_file():
+            raise ValueError(f"Missing regular GoReleaser binary: {binary}")
         actual, target, _, settings = build_info(binary)
         expected_name = "receipts.exe" if target[0] == "windows" else "receipts"
-        if target not in TARGETS or target in binaries or binary.name != expected_name:
+        declared = (artifact["goos"], artifact["goarch"])
+        if target != declared or target not in TARGETS or target in binaries or binary.name != expected_name:
             raise ValueError(f"Unexpected or duplicate executable target {target}: {binary}")
         if actual != compiler or settings.get("vcs.revision") != commit:
             raise ValueError(

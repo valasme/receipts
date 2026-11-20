@@ -9,7 +9,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from bundle import COMMIT, MANIFEST, RECORD, SHA256, digest, release_assets, validate_tag, verify_bundle
+from bundle import (
+    COMMIT, INSTALLERS, MANIFEST, RECORD, SHA256, digest, release_assets,
+    validate_tag, verify_bundle,
+)
 
 REPO = "valasme/receipts"
 COMMAND_TIMEOUT = 90
@@ -108,8 +111,11 @@ class GitHub:
         )
 
 
-def require_release(release, tag):
-    if not release or release["tag_name"] != tag or not release["prerelease"]:
+def require_release(release, tag, identity=None):
+    if (
+        not release or release["tag_name"] != tag or not release["prerelease"]
+        or (identity is not None and release["id"] != identity)
+    ):
         raise ValueError(f"Expected a prerelease for {tag}")
 
 
@@ -164,7 +170,7 @@ def stage(github, tag, commit, workflow, root, notes):
     for name in missing:
         github.upload(release_id, root / name)
     observed = github.release(release_id)
-    require_release(observed, tag)
+    require_release(observed, tag, release_id)
     if observed["draft"] != release["draft"]:
         raise ValueError("Release changed publication state during staging")
     if missing_assets(remote_assets(github, observed), bundle.hashes, observed):
@@ -176,7 +182,7 @@ def stage(github, tag, commit, workflow, root, notes):
 def fetch_verified(github, release, root, *, tag, commit, checksum=None, workflow=None):
     require_release(release, tag)
     assets = remote_assets(github, release)
-    expected = release_assets(tag.removeprefix("v")) | {MANIFEST, RECORD, "preview-installers.zip"}
+    expected = release_assets(tag.removeprefix("v")) | {MANIFEST, RECORD, INSTALLERS}
     if assets.keys() != expected or any(a["state"] != "uploaded" for a in assets.values()):
         raise ValueError("Remote release does not have the complete uploaded asset set")
     root.mkdir()
@@ -214,19 +220,20 @@ def promote(github, tag, commit, release_id, checksum):
         raise ValueError("Promotion requires the approved numeric release ID and SHA-256")
     require_commit(github, tag, commit)
     release = github.release(release_id)
+    require_release(release, tag, release_id)
     with tempfile.TemporaryDirectory() as temp:
         bundle = fetch_verified(
             github, release, Path(temp) / "bundle", tag=tag, commit=commit, checksum=checksum,
         )
         observed = github.release(release_id)
-        require_release(observed, tag)
+        require_release(observed, tag, release_id)
         if missing_assets(remote_assets(github, observed), bundle.hashes, observed):
             raise ValueError("Remote release changed before promotion")
         require_commit(github, tag, commit)
         if observed["draft"]:
             published = github.publish(release_id)
-            require_release(published, tag)
-            if published["draft"] or published["id"] != release_id:
+            require_release(published, tag, release_id)
+            if published["draft"]:
                 raise ValueError("GitHub did not confirm publication of the selected draft")
 
 

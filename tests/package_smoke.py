@@ -1,27 +1,15 @@
 """Run the pinned source revision's process contracts on its archived executable."""
 
 import argparse
-import os
-import platform
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+from installed_check import native_target, qualify
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packaging"))
-from bundle import extract_native, verify_bundle
-
-
-def native_target():
-    system = {"Darwin": "darwin", "Linux": "linux", "Windows": "windows"}[platform.system()]
-    # An emulated Python may report its own architecture on native ARM runners.
-    runner = os.environ.get("RUNNER_ARCH")
-    arch = {"X64": "amd64", "ARM64": "arm64"}.get(runner)
-    if arch is None:
-        arch = {"amd64": "amd64", "x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}[
-            platform.machine().lower()
-        ]
-    return system, arch
+from bundle import HISTORICAL_WITHOUT_NOTICES, extract_native, verify_bundle
 
 
 def smoke(root, source, *, tag, commit, workflow=None):
@@ -30,20 +18,20 @@ def smoke(root, source, *, tag, commit, workflow=None):
     with tempfile.TemporaryDirectory() as directory:
         dest = Path(directory)
         binary = extract_native(bundle, system, arch, dest)
-        actual = subprocess.check_output([binary, "--version"], text=True, timeout=20).strip()
-        if actual != "receipts " + bundle.version:
-            raise ValueError(f"Expected {bundle.version}, observed {actual}")
+        qualify(binary, bundle.version)
         for relative in (
             "tests/installed_licenses.py", "tests/acceptance.py", "tests/storage.py",
             "tests/golden.py", "tests/evaluate.py", "tests/claim_files.py",
             "tests/file_changes.py", "examples/agent/replay.py",
         ):
             script = source / relative
-            if not script.is_file() and relative in {
-                "tests/installed_licenses.py", "tests/claim_files.py",
-                "tests/file_changes.py", "examples/agent/replay.py",
-            }:
-                # Historical source trees qualify the contracts they shipped.
+            historical = (
+                tag == HISTORICAL_WITHOUT_NOTICES and relative == "tests/installed_licenses.py"
+                or tag in {HISTORICAL_WITHOUT_NOTICES, "v0.0.1-pre.2"} and relative in {
+                    "tests/claim_files.py", "tests/file_changes.py", "examples/agent/replay.py",
+                }
+            )
+            if historical and not script.is_file():
                 print(f"{commit}: {relative} was not present", flush=True)
                 continue
             print(f"Archived {system}/{arch} {bundle.version}: {relative}", flush=True)
