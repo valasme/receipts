@@ -21,17 +21,19 @@ const (
 )
 
 type reviewEntry struct {
-	start, end int
-	quote      *quotation
-	citation   string
-	statement  string
+	start, end     int
+	quote          *quotation
+	citation       string
+	statement      string
+	fileChangePath string
 }
 
 func executeReview(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("review", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	var repo, rev, submissionFile, proposalFile string
-	registerOptions(flags, stringOption{"repo", &repo, "."}, stringOption{"rev", &rev, ""},
+	var repo, rev, comparison, submissionFile, proposalFile string
+	provided := registerOptions(flags, stringOption{"repo", &repo, "."}, stringOption{"rev", &rev, ""},
+		stringOption{"compare", &comparison, ""},
 		stringOption{"submission", &submissionFile, ""}, stringOption{"proposal", &proposalFile, ""})
 	if flags.Parse(args) != nil || flags.NArg() != 0 || repo == "" || submissionFile == "" || proposalFile == "" || (submissionFile == "-" && proposalFile == "-") {
 		fmt.Fprintln(stderr, "Supply --submission, --proposal, and --rev. At most one input may use stdin. Run receipts review --help.")
@@ -41,7 +43,13 @@ func executeReview(ctx context.Context, args []string, stdin io.Reader, stdout, 
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	preview, err := review(ctx, stdin, repo, rev, submissionFile, proposalFile)
+	if provided["compare"] {
+		if err := check.ValidateRevision(comparison); err != nil {
+			fmt.Fprintln(stderr, "comparison commit:", err)
+			return 2
+		}
+	}
+	preview, err := review(ctx, stdin, repo, rev, comparison, submissionFile, proposalFile)
 	if ctx.Err() != nil {
 		fmt.Fprintln(stderr, "Review interrupted.")
 		return 130
@@ -67,7 +75,7 @@ func executeReview(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	return 0
 }
 
-func review(ctx context.Context, stdin io.Reader, repo, rev, submissionFile, proposalFile string) (string, error) {
+func review(ctx context.Context, stdin io.Reader, repo, rev, comparison, submissionFile, proposalFile string) (string, error) {
 	body, err := readInput(ctx, stdin, submissionFile, maxReviewFile, "submission")
 	if err != nil {
 		return "", fmt.Errorf("submission: %w", err)
@@ -101,30 +109,45 @@ func review(ctx context.Context, stdin io.Reader, repo, rev, submissionFile, pro
 		} else {
 			fmt.Fprintf(&out, "Submission lines %d–%d\n", entry.start, entry.end)
 		}
-		if entry.quote == nil {
+		switch {
+		case entry.fileChangePath != "":
+			if comparison == "" {
+				return "", errors.New("file-change claims require --compare with a full commit ID")
+			}
+			receipt, err := check.VerifyFileChange(clock, repo, comparison, rev, entry.fileChangePath)
+			if err != nil {
+				return "", fmt.Errorf("proposal file-change claim at submission line %d: %w", entry.start, err)
+			}
+			out.WriteString(receipt.Text())
+			fmt.Fprintln(&out, "Statement ·", strconv.QuoteToGraphic(entry.statement))
+		case entry.quote != nil:
+			receipt, err := check.Verify(clock, repo, rev, entry.quote.path, []byte(entry.quote.text), version)
+			if err != nil {
+				return "", fmt.Errorf("proposal claim at submission line %d: %w", entry.start, err)
+			}
+			out.WriteString(receipt.Text())
+			fmt.Fprintln(&out, "Citation ·", strconv.QuoteToGraphic(entry.citation))
+		default:
 			fmt.Fprintln(&out, "Unresolved ·", strconv.QuoteToGraphic(entry.statement))
-			continue
 		}
-		receipt, err := check.Verify(clock, repo, rev, entry.quote.path, []byte(entry.quote.text), version)
-		if err != nil {
-			return "", fmt.Errorf("proposal claim at submission line %d: %w", entry.start, err)
-		}
-		out.WriteString(receipt.Text())
-		fmt.Fprintln(&out, "Citation ·", strconv.QuoteToGraphic(entry.citation))
 	}
 	return out.String(), nil
 }
 
 func parseReviewEntries(data []byte, lines []string) ([]reviewEntry, error) {
-	fields := objectFields(data, "claims", "unresolved")
-	var claims, unresolved []json.RawMessage
+	fields := objectFields(data, "claims", "unresolved", "file_changes")
+	var claims, unresolved, fileChanges []json.RawMessage
 	if json.Unmarshal(fields["claims"], &claims) != nil || json.Unmarshal(fields["unresolved"], &unresolved) != nil || claims == nil || unresolved == nil {
 		return nil, errors.New("invalid proposal; expected claims and unresolved arrays")
 	}
-	if len(claims)+len(unresolved) > maxReviewEntries {
+	if raw := fields["file_changes"]; raw != nil && (json.Unmarshal(raw, &fileChanges) != nil || fileChanges == nil) {
+		return nil, errors.New("invalid proposal file_changes array")
+	}
+	count := len(claims) + len(unresolved) + len(fileChanges)
+	if count > maxReviewEntries {
 		return nil, fmt.Errorf("proposal may contain at most %d total entries", maxReviewEntries)
 	}
-	entries := make([]reviewEntry, 0, len(claims)+len(unresolved))
+	entries := make([]reviewEntry, 0, count)
 	for index, raw := range claims {
 		fields := objectFields(raw, "path", "quote", "source_lines")
 		source, entry := reviewSpan(fields["source_lines"], lines)
@@ -136,12 +159,23 @@ func parseReviewEntries(data []byte, lines []string) ([]reviewEntry, error) {
 		entry.citation = source[0]
 		entries = append(entries, entry)
 	}
+	for index, raw := range fileChanges {
+		fields := objectFields(raw, "path", "statement", "source_lines")
+		source, entry := reviewSpan(fields["source_lines"], lines)
+		path, okPath := jsonString(fields["path"])
+		statement, okStatement := matchedStatement(fields["statement"], source)
+		if !okPath || path == "" || !okStatement || !namesPath(statement, path) {
+			return nil, fmt.Errorf("proposal file-change claim %d does not match a statement naming its exact path", index+1)
+		}
+		entry.fileChangePath = path
+		entry.statement = statement
+		entries = append(entries, entry)
+	}
 	for index, raw := range unresolved {
 		fields := objectFields(raw, "statement", "source_lines")
 		source, entry := reviewSpan(fields["source_lines"], lines)
-		statement, ok := jsonString(fields["statement"])
-		statement = strings.ReplaceAll(statement, "\r\n", "\n")
-		if !ok || source == nil || strings.TrimSpace(statement) == "" || strings.Join(source, "\n") != statement {
+		statement, ok := matchedStatement(fields["statement"], source)
+		if !ok {
 			return nil, fmt.Errorf("unresolved entry %d does not match the submission text", index+1)
 		}
 		entry.statement = statement
@@ -156,6 +190,12 @@ func parseReviewEntries(data []byte, lines []string) ([]reviewEntry, error) {
 	return entries, nil
 }
 
+func matchedStatement(raw json.RawMessage, source []string) (string, bool) {
+	statement, ok := jsonString(raw)
+	statement = strings.ReplaceAll(statement, "\r\n", "\n")
+	return statement, ok && source != nil && strings.TrimSpace(statement) != "" && strings.Join(source, "\n") == statement
+}
+
 func reviewSpan(raw json.RawMessage, lines []string) ([]string, reviewEntry) {
 	var span []int
 	if json.Unmarshal(raw, &span) != nil || len(span) != 2 || span[0] < 1 || span[1] < span[0] || span[1] > len(lines) {
@@ -168,8 +208,7 @@ func matchesCitation(lines []string, quote quotation) bool {
 	if len(lines) < 4 || (lines[1] != "```" && lines[1] != "```text") || lines[len(lines)-1] != "```" {
 		return false
 	}
-	attribution := strings.Split(lines[0], "`")
-	if len(attribution) != 3 || attribution[1] != quote.path {
+	if !namesPath(lines[0], quote.path) {
 		return false
 	}
 	quoted := lines[2 : len(lines)-1]
@@ -179,4 +218,9 @@ func matchesCitation(lines []string, quote quotation) bool {
 		}
 	}
 	return strings.Join(quoted, "\n")+"\n" == strings.ReplaceAll(quote.text, "\r\n", "\n")
+}
+
+func namesPath(statement, path string) bool {
+	parts := strings.SplitN(statement, "`", 4)
+	return len(parts) == 3 && parts[1] == path
 }

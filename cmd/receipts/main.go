@@ -22,14 +22,15 @@ var version = "dev"
 const help = `Usage: receipts check --rev COMMIT --path PATH --quote-file FILE [--repo DIR] [--format FORMAT]
        receipts check --claim-file FILE [--repo DIR] [--format FORMAT]
        receipts check --batch-file FILE [--repo DIR] [--format json]
-       receipts review --submission FILE --proposal FILE --rev COMMIT [--repo DIR]
+       receipts review --submission FILE --proposal FILE --rev COMMIT [--compare COMMIT] [--repo DIR]
        receipts --help | --version | --licenses
 
 Check an exact source quotation in a committed file. Use a full SHA-1
 commit ID and a repository-relative path. The repository defaults to ".".
 Pass - as a file to read stdin. Single claim formats: text, json, markdown.
 A batch checks up to 16 claims at one commit and returns ordered JSON results.
-A review preview links checked quotes and unresolved statements to submission lines.
+A review preview links receipts and unresolved statements to submission lines.
+File-change claims require a pinned comparison commit with --compare.
 A final newline in the quotation is significant.
 
 Create a quote without a trailing newline:

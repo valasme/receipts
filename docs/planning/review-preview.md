@@ -14,13 +14,27 @@ The public issue sample ran from [Agent hint for `gh event listen`](https://gith
 
 ## CLI contract
 
-`receipts review --submission FILE --proposal FILE --rev COMMIT [--repo DIR]` consumes a UTF-8 Markdown body and the existing example proposal format. One input may use stdin. The proposal contains `claims` and `unresolved` arrays, with at most 16 total entries. Both files are limited to 1 MiB. Normalize CRLF to LF for matching source spans. Require a full commit ID.
+`receipts review --submission FILE --proposal FILE --rev COMMIT [--compare COMMIT] [--repo DIR]` consumes a UTF-8 Markdown body and a proposal. One input may use stdin. The proposal requires `claims` and `unresolved` arrays and accepts an optional `file_changes` array, with at most 16 total entries. Both files are limited to 1 MiB. Normalize CRLF to LF for matching source spans. Require full SHA-1 commit IDs.
 
-A claim points at one attribution line with a single backticked path, immediately followed by an unindented triple-backtick fence with optional `text` and its exact contents. An unresolved entry identifies its exact statement, which may span lines. Source spans are inclusive, one-based and nonoverlapping. Expected quote text includes the LF before the closing fence. The maintainer reviews the proposals in context. The checks establish literal correspondence within the supplied span.
+A quotation claim points at one attribution line with a single backticked path, immediately followed by an unindented triple-backtick fence with optional `text` and its exact contents. An unresolved entry identifies its exact statement, which may span lines. Source spans are inclusive, one-based and nonoverlapping. Expected quote text includes the LF before the closing fence. The maintainer reviews the proposals in context. The checks establish literal correspondence within the supplied span.
 
-The preview shows each entry in submission order. A checked quote includes the existing human-readable receipt and the safely quoted citation line. An unresolved statement is displayed with its source location and safely quoted text. An unsupported Git observation still produces Can't check. A citation mismatch, malformed input or invalid claim exits 2 without emitting a preview. Empty proposals display that no claims or statements were proposed. Successful delivery exits 0. Output failures exit 1 and cancellation exits 130. Quote checks share the existing five-second read budget.
+The preview shows each entry in submission order. A checked quote includes the existing human-readable receipt and the safely quoted citation line. An unresolved statement is displayed with its source location and safely quoted text. An unsupported Git observation still produces Can't check. A citation mismatch, malformed input or invalid claim exits 2 without emitting a preview. Empty proposals display that no claims or statements were proposed. Successful delivery exits 0. Output failures exit 1 and cancellation exits 130. Checks share the existing five-second read budget.
 
 Test at the public CLI process boundary with a committed Git fixture and the captured agent proposal. Independently replay the receipts. Include a changed quote, hostile display text, and an empty proposal. Keep the existing checker contract and use no network or model calls in the command.
+
+## File-change council
+
+| Perspective | Concern | Decision |
+| --- | --- | --- |
+| Maintainer | A branch tip can move and a rename can hide which exact path the author meant. | Compare one case-sensitive repository-relative path between a caller-pinned comparison commit and head commit. For a GitHub-style PR diff, supply the merge base as the comparison commit. A rename gives separate observations for the old and new paths. |
+| Evidence | The same blob can acquire executable mode, and a regular file can become a symlink. An unreadable object cannot establish equality or absence. | Compare verified blob IDs and Git modes for regular files and symlinks. Read a symlink's committed target bytes as a blob. Additions, deletions, mode-only changes and transitions between these file kinds count. Equal entries or two proven absences contradict the claim. Directories and submodules at the exact path, non-tree ancestors, and missing or unreadable required objects yield Can't check. This applies the [claim-level evidence decision](../adr/0001-verdicts-require-evidence.md). |
+| Implementation | A proposal can point at stale text, or a receipt could imply that the whole sentence was verified. | Add an optional collection to the local review proposal for explicit positive file-change claims. Require the verbatim statement, exact backticked path, and matching submission lines. Pin the comparison commit with a CLI option. Show each side's evidence with the claim and keep the statement visible for human review. Exercise the public CLI process with real Git fixtures. |
+
+## File-change proposals
+
+Add a `file_changes` array to a review proposal and supply `--compare COMMIT` when the array contains entries. The `--rev` commit is the head. Each entry has a `path`, `statement` and inclusive `source_lines`. The statement must match those submission lines after CRLF normalization and contain exactly one pair of backticks enclosing the literal path. The same entry limit and span rules apply across all three arrays. The maintainer confirms whether the statement makes the positive claim that this path changed.
+
+Compare the blob ID and mode at each exact path. Blob IDs reflect committed bytes, including line endings and symlink targets. If a verified tree proves a component is missing, show that tree and component. Show mode and blob ID for a verified file, or the reason evidence is incomplete or unsupported. A path absent in both trees yields Contradicted. The [walkthrough](../../examples/agent/README.md#check-whether-a-file-changed) includes a runnable fixture.
 
 ## PR change claim sample
 
@@ -34,3 +48,9 @@ Four PRs (4/15 overall, 4/12 among the non-bot authors) made explicit claims abo
 | [Preserve workflow cancel errors](https://github.com/cli/cli/pull/15103/files) | `pkg/cmd/run/cancel/cancel.go`, `pkg/cmd/run/cancel/cancel_test.go` |
 | [Handle empty pager commands](https://github.com/cli/cli/pull/15098/files) | `pkg/iostreams/iostreams.go`, `pkg/iostreams/iostreams_test.go` |
 | [Document duplicate events](https://github.com/cli/cli/pull/15094/files) | `pkg/cmd/event/listen/listen.go`, `skills/gh/SKILL.md` |
+
+## Human comparison trial
+
+Use fresh PRs with explicit file-change claims. For each PR, record the submission and pin the base tip, merge base and head before reviewing. Use GitHub's **Files changed** view for the manual arm and the local review preview for the assisted arm, with the merge base as the comparison commit. Check both names of any displayed rename. Inspect discrepancies with `git diff --no-renames --name-status COMPARISON_COMMIT HEAD_COMMIT` and record unavailable evidence separately.
+
+Use the [paired timing procedure in the product spec](spec.md#evaluation-and-decision-to-expand). Include proposal preparation, commit lookup, reading the result and resolving any gaps in the assisted time. Record verdict accuracy, inconclusive results and end-to-end time per pair. The sample and synthetic replay establish coverage and correctness on their examples. The pilot decision still requires the timing and accuracy evidence in the product spec.

@@ -116,89 +116,73 @@ func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt
 		return unresolved(r, err), nil
 	}
 	defer s.root.Close()
-	commit, err := s.read(rev)
+	treeID, err := s.commitTree(rev)
 	if err != nil {
+		if errors.Is(err, errNotCommit) {
+			return Receipt{}, err
+		}
+		if errors.Is(err, errCommitTree) {
+			r.Reason = "object_unavailable"
+		}
 		return unresolved(r, err), nil
-	}
-	if commit.kind != "commit" {
-		return Receipt{}, errors.New("revision must identify a commit object." + resolveCommitHint)
-	}
-	header, _, ok := bytes.Cut(commit.data, []byte("\n"))
-	if !ok || len(header) != 45 || !bytes.HasPrefix(header, []byte("tree ")) {
-		r.Reason = "object_unavailable"
-		return r, nil
-	}
-	treeID := string(header[5:])
-	if _, err := hex.DecodeString(treeID); err != nil {
-		r.Reason = "object_unavailable"
-		return r, nil
 	}
 	r.Evidence = Evidence{Format: "sha1", Commit: rev}
 	r.Reason = "object_unavailable"
-	parts := strings.Split(path, "/")
-	for i, part := range parts {
-		tree, err := s.read(treeID)
-		if err != nil {
-			return unresolved(r, err), nil
-		}
-		if tree.kind != "tree" {
-			return r, nil
-		}
-		mode, id, err := lookup(tree.data, part)
-		if err != nil {
-			return unresolved(r, err), nil
-		}
-		if id == "" {
-			r.Verdict = "contradicted"
-			r.Reason = "path_absent"
-			r.Evidence.Tree = treeID
-			r.Evidence.Missing = part
-			return r, nil
-		}
-		if i < len(parts)-1 && mode == "40000" {
-			treeID = id
-			continue
-		}
-		if i < len(parts)-1 || (mode != "100644" && mode != "100755") {
-			r.Reason = "unsupported_kind"
-			return r, nil
-		}
-		blob, err := s.read(id)
-		if err != nil {
-			return unresolved(r, err), nil
-		}
-		if blob.kind != "blob" {
-			return r, nil
-		}
-		r.Evidence.Blob = id
-		if !utf8.Valid(blob.data) || bytes.IndexByte(blob.data, 0) >= 0 || bytes.HasPrefix(blob.data, []byte("version https://git-lfs.github.com/spec/v1")) {
-			r.Reason = "unsupported_content"
-			return r, nil
-		}
-		source := normalize(blob.data)
-		at := bytes.Index(source, quote)
-		if ctx.Err() != nil {
-			return unresolved(r, errLimit), nil
-		}
-		if at < 0 {
-			r.Verdict = "contradicted"
-			r.Reason = "quote_absent"
-			return r, nil
-		}
-		start := bytes.Count(source[:at], []byte("\n")) + 1
-		r.Evidence.Lines = &Lines{start, start + bytes.Count(quote[:len(quote)-1], []byte("\n"))}
-		r.Verdict = "verified"
-		r.Reason = "quote_found"
+	entry, err := s.findPath(treeID, path)
+	if err != nil {
+		return unresolved(r, err), nil
+	}
+	if entry.id == "" {
+		r.Verdict = "contradicted"
+		r.Reason = "path_absent"
+		r.Evidence.Tree = entry.tree
+		r.Evidence.Missing = entry.component
 		return r, nil
 	}
+	if entry.blocked || (entry.mode != "100644" && entry.mode != "100755") {
+		r.Reason = "unsupported_kind"
+		return r, nil
+	}
+	blob, err := s.readBlob(entry.id)
+	if err != nil {
+		return unresolved(r, err), nil
+	}
+	r.Evidence.Blob = entry.id
+	if !utf8.Valid(blob) || bytes.IndexByte(blob, 0) >= 0 || bytes.HasPrefix(blob, []byte("version https://git-lfs.github.com/spec/v1")) {
+		r.Reason = "unsupported_content"
+		return r, nil
+	}
+	source := normalize(blob)
+	at := bytes.Index(source, quote)
+	if ctx.Err() != nil {
+		return unresolved(r, errLimit), nil
+	}
+	if at < 0 {
+		r.Verdict = "contradicted"
+		r.Reason = "quote_absent"
+		return r, nil
+	}
+	start := bytes.Count(source[:at], []byte("\n")) + 1
+	r.Evidence.Lines = &Lines{start, start + bytes.Count(quote[:len(quote)-1], []byte("\n"))}
+	r.Verdict = "verified"
+	r.Reason = "quote_found"
 	return r, nil
 }
 
 func unresolved(r Receipt, err error) Receipt {
-	if errors.Is(err, errLimit) || errors.Is(err, errStorage) {
-		r.Reason = err.Error()
-	}
+	r.Reason = objectFailure(err, r.Reason)
 	return r
+}
+
+func objectFailure(err error, fallback string) string {
+	switch {
+	case errors.Is(err, errLimit):
+		return errLimit.Error()
+	case errors.Is(err, errStorage):
+		return errStorage.Error()
+	default:
+		return fallback
+	}
 }
 
 // Inspect the complete tree before trusting either a positive or negative lookup.

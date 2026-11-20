@@ -41,7 +41,11 @@ def fixture(repo):
         blob = git(repo, "hash-object", "-w", "--stdin", data=content).strip()
         entries += b"100644 blob " + blob + b"\t" + path.encode() + b"\n"
     tree = git(repo, "mktree", data=entries).decode().strip()
-    return git(repo, "commit-tree", tree, "-m", "Receipts demo").decode().strip()
+    before = git(repo, "hash-object", "-w", "--stdin", data=b"Export guide draft.\n").strip()
+    old_tree = git(repo, "mktree", data=b"100644 blob " + before + b"\tguide.txt\n").decode().strip()
+    comparison = git(repo, "commit-tree", old_tree, "-m", "Receipts demo draft").decode().strip()
+    head = git(repo, "commit-tree", tree, "-p", comparison, "-m", "Receipts demo").decode().strip()
+    return comparison, head
 
 
 def check(binary, repo, option, data):
@@ -166,7 +170,25 @@ def check_preview_delivery(binary, repo, rev, proposal):
                 process.kill()
 
 
-def replay(binary, proposal_file):
+def file_change_preview(binary, repo, comparison, head):
+    statement = "This PR updates `guide.txt`."
+    proposal = repo / "file-change.json"
+    proposal.write_text(json.dumps({
+        "claims": [],
+        "file_changes": [{"path": "guide.txt", "statement": statement, "source_lines": [1, 1]}],
+        "unresolved": [],
+    }), encoding="utf-8")
+    result = subprocess.run(
+        [*review_command(binary, repo, head, proposal), "--compare", comparison],
+        input=(statement + "\n").encode(), capture_output=True, check=True, timeout=20,
+    )
+    diff = git(repo, "diff", "--name-status", comparison, head, "--", "guide.txt")
+    assert diff == b"M\tguide.txt\n", diff
+    assert result.stderr == b"" and b"Verified" in result.stdout, result
+    return result.stdout.decode()
+
+
+def replay(binary, proposal_file, show_file_change):
     proposal = json.loads(proposal_file.read_bytes())
     submission = (HERE / "submission.md").read_text(encoding="utf-8").splitlines()
     claims = []
@@ -180,7 +202,7 @@ def replay(binary, proposal_file):
 
     with tempfile.TemporaryDirectory() as directory:
         repo = Path(directory)
-        rev = fixture(repo)
+        comparison, rev = fixture(repo)
         scope = {"schema_major": 1, "rev": rev}
         preview = check_preview(binary, repo, rev, proposal_file, proposal["claims"])
         result = check(binary, repo, "--batch-file", {**scope, "claims": claims})
@@ -207,6 +229,8 @@ def replay(binary, proposal_file):
             assert receipt["evidence"]["blob_id"] == git(repo, "rev-parse", ref).decode().strip()
             observed.add(receipt["verdict"])
         assert observed == {"verified", "contradicted", "cant_check"}
+        if show_file_change:
+            preview = file_change_preview(binary, repo, comparison, rev)
 
     assert len(proposal["unresolved"]) == 1
     for item in proposal["unresolved"]:
@@ -219,5 +243,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
     parser.add_argument("--proposal", type=Path, default=HERE / "proposal.json")
+    parser.add_argument("--file-change", action="store_true", help="show a file-change preview")
     args = parser.parse_args()
-    replay(args.binary.resolve(), args.proposal)
+    replay(args.binary.resolve(), args.proposal, args.file_change)

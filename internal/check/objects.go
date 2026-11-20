@@ -1,4 +1,4 @@
-// Package check verifies exact quotations against immutable local Git objects.
+// Package check verifies claims against immutable local Git objects.
 package check
 
 import (
@@ -24,6 +24,8 @@ const maxBlob = 8 << 20
 var errLimit = errors.New("resource_limit")
 var errObject = errors.New("object_unavailable")
 var errStorage = errors.New("unsupported_storage")
+var errNotCommit = errors.New("revision must identify a commit object." + resolveCommitHint)
+var errCommitTree = errors.New("invalid commit tree reference")
 
 type object struct {
 	kind string
@@ -33,6 +35,69 @@ type store struct {
 	root      *os.Root
 	ctx       context.Context
 	remaining int64
+}
+
+func (s *store) commitTree(rev string) (string, error) {
+	commit, err := s.read(rev)
+	if err != nil {
+		return "", err
+	}
+	if commit.kind != "commit" {
+		return "", errNotCommit
+	}
+	header, _, ok := bytes.Cut(commit.data, []byte("\n"))
+	if !ok || len(header) != 45 || !bytes.HasPrefix(header, []byte("tree ")) {
+		return "", errCommitTree
+	}
+	treeID := string(header[5:])
+	if _, err := hex.DecodeString(treeID); err != nil {
+		return "", errCommitTree
+	}
+	return treeID, nil
+}
+
+type pathEntry struct {
+	tree, mode, id, component string
+	blocked                   bool
+}
+
+func (s *store) findPath(treeID, path string) (pathEntry, error) {
+	for {
+		component, rest, hasRest := strings.Cut(path, "/")
+		tree, err := s.read(treeID)
+		if err != nil {
+			return pathEntry{}, err
+		}
+		if tree.kind != "tree" {
+			return pathEntry{}, errObject
+		}
+		mode, id, err := lookup(tree.data, component)
+		if err != nil {
+			return pathEntry{}, err
+		}
+		if hasRest && mode == "40000" {
+			treeID, path = id, rest
+			continue
+		}
+		return pathEntry{
+			tree:      treeID,
+			mode:      mode,
+			id:        id,
+			component: component,
+			blocked:   hasRest && id != "",
+		}, nil
+	}
+}
+
+func (s *store) readBlob(id string) ([]byte, error) {
+	blob, err := s.read(id)
+	if err != nil {
+		return nil, err
+	}
+	if blob.kind != "blob" {
+		return nil, errObject
+	}
+	return blob.data, nil
 }
 
 func openStore(ctx context.Context, path string) (*store, error) {

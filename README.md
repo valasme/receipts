@@ -107,6 +107,8 @@ receipts review --submission submission.md --proposal proposal.json --rev COMMIT
 
 The preview shows where each checked quote or unresolved statement appears in the submission. Each quote also shows its citation and Git evidence. A proposal whose source lines or text disagree with the submission returns an input error. Review the proposal and the surrounding submission text for context. Run `python examples/agent/replay.py ./receipts-demo.exe` with a development binary to try the worked example.
 
+To check whether a file changed, add a file-change proposal and pass `--compare COMMIT` alongside the head commit in `--rev`. The preview shows evidence for the exact path at both commits. [File-change walkthrough](examples/agent/README.md#check-whether-a-file-changed)
+
 ## Read the result
 
 **Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.
@@ -115,7 +117,7 @@ Text is the default. Use `--format markdown` for a pasteable block and `--format
 
 ## Supported storage and limits
 
-Use a regular local clone or bare SHA-1 repository. Receipts reads loose objects, v2 indexes, packed objects and bounded offset deltas. Reference deltas, alternate object databases and linked worktree indirections may return an inconclusive receipt. Symlinks, submodules, LFS pointers and binary source are unsupported. Reads never invoke Git or execute submitted code. The checker accepts a 64 KiB normalized quote, an 8 MiB source and up to 128 path components. Conservative limits on index bytes, total decoded bytes and a five-second object lookup deadline also apply.
+Use a regular local clone or bare SHA-1 repository. Receipts reads loose objects, v2 indexes, packed objects and bounded offset deltas. Reference deltas, alternate object databases and linked worktree indirections may return an inconclusive receipt. Quotation checks leave symlinks, submodules, LFS pointers and binary source unsupported. Reads never invoke Git or execute submitted code. The checker accepts a 64 KiB normalized quote, an 8 MiB source and up to 128 path components. Conservative limits on index bytes, total decoded bytes and a five-second object lookup deadline also apply.
 
 ## Contribute and report problems
 
