@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory)][string]$Repo,
     [Parameter(Mandatory)][string]$Revision,
     [Parameter(Mandatory)][string]$Quote,
-    [Parameter(Mandatory)][string]$EmptyPath
+    [Parameter(Mandatory)][string]$EmptyPath,
+    [Parameter(Mandatory)][string]$ReceiptOutput
 )
 $ErrorActionPreference = 'Stop'
 $name = "Receipts offline qualification $([guid]::NewGuid())"
@@ -25,13 +26,19 @@ try {
         $start.ArgumentList.Add($arg)
     }
     $child = [Diagnostics.Process]::Start($start)
-    $copy = $child.StandardOutput.BaseStream.CopyToAsync([Console]::OpenStandardOutput())
-    if (!$child.WaitForExit(15000)) {
-        $child.Kill($true)
-        throw 'The offline receipt check timed out'
+    $receipt = [IO.File]::Create($ReceiptOutput)
+    try {
+        $copy = $child.StandardOutput.BaseStream.CopyToAsync($receipt)
+        if (!$child.WaitForExit(15000)) {
+            $child.Kill($true)
+            throw 'The offline receipt check timed out'
+        }
+        $copy.GetAwaiter().GetResult()
+        $code = $child.ExitCode
+    } finally {
+        $receipt.Dispose()
+        $child.Dispose()
     }
-    $copy.GetAwaiter().GetResult()
-    $code = $child.ExitCode
 } finally {
     Remove-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue
 }

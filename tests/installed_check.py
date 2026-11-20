@@ -55,15 +55,18 @@ def offline_receipt(binary, version):
         elif system == "darwin":
             prefix = ["sandbox-exec", "-p", "(version 1) (allow default) (deny network*)"]
         else:
-            prefix = []
-            argv = ["pwsh", "-NoProfile", "-File", Path(__file__).with_name("offline_receipt.ps1"),
-                    "-Binary", executable, "-Repo", repo, "-Revision", REV,
-                    "-Quote", quote, "-EmptyPath", empty]
-        if prefix:
+            receipt_path = root / "receipt.json"
+            invoke("pwsh", "-NoProfile", "-File", Path(__file__).with_name("offline_receipt.ps1"),
+                   "-Binary", executable, "-Repo", repo, "-Revision", REV,
+                   "-Quote", quote, "-EmptyPath", empty, "-ReceiptOutput", receipt_path,
+                   label="Capture frozen receipt under Windows Firewall", timeout=40)
+            actual = receipt_path.read_bytes()
+        if system != "windows":
             argv = [*prefix, shutil.which("env"), f"PATH={empty}", *argv]
-        actual = output(*argv, label="Frozen receipt with networking disabled and Git off PATH", timeout=40)
-        if actual != receipt(version):
-            raise ValueError(f"Offline receipt bytes differ for {binary}")
+            actual = output(*argv, label="Frozen receipt with networking disabled and Git off PATH", timeout=40)
+        expected = receipt(version)
+        if actual != expected:
+            raise ValueError(f"Offline receipt bytes differ for {binary}: expected {expected!r}, observed {actual[:1024]!r}")
 
 
 def qualify(binary, version, *, expected=None, alias=None, offline=True):
