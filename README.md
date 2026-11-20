@@ -14,6 +14,8 @@ go test ./...
 
 To install the development CLI from this checkout, run `go install ./cmd/receipts` and add your Go binary directory to PATH. The starter supports help and version output. The first claim checker is in planning.
 
+The [planning index](docs/planning/README.md) links the full specification, receipt examples, milestone tickets and review inventory.
+
 ## First milestone proposal
 
 1. Check a single explicitly supplied claim against a local repository and pinned commit. A good first case is “this exact quotation appears in this file.” Record the path, commit, and matching lines so a maintainer can repeat the check.
