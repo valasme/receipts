@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 type failedOutput struct{}
@@ -34,5 +36,26 @@ func TestCommands(t *testing.T) {
 		if code != tc.code || unused != "" || !strings.Contains(got, tc.want) {
 			t.Errorf("%q returned %d, stdout=%q stderr=%q", tc.args, code, out.String(), diag.String())
 		}
+	}
+}
+
+func TestInterruptWhileWaitingForInput(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	defer reader.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan int, 1)
+	go func() {
+		done <- execute(ctx, []string{"check", "--rev", strings.Repeat("0", 40), "--path", "file", "--quote-file", "-"}, reader, io.Discard, io.Discard)
+	}()
+	cancel()
+	select {
+	case code := <-done:
+		if code != 130 {
+			t.Fatal(code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled input blocked")
 	}
 }

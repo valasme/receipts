@@ -70,7 +70,7 @@ jobs:
         run: |
           Expand-Archive bundle/preview-installers.zip -DestinationPath manifests
           if (Get-Command winget -ErrorAction SilentlyContinue) {
-            winget validate --manifest manifests/winget/receipts.yaml
+            winget validate --manifest manifests/winget
             exit $LASTEXITCODE
           }
           Write-Output 'WinGet unavailable on this runner.'

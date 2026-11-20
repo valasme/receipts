@@ -91,19 +91,38 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	if file != "-" {
-		f, err := os.Open(file)
-		if err != nil {
-			fmt.Fprintln(stderr, "Cannot open quote file. Check its path and permissions.")
+	type input struct {
+		data []byte
+		err  error
+	}
+	read := make(chan input, 1)
+	go func() {
+		if file != "-" {
+			f, err := os.Open(file)
+			if err != nil {
+				read <- input{err: errors.New("cannot open quote file; check its path and permissions")}
+				return
+			}
+			defer f.Close()
+			stdin = f
+		}
+		data, err := io.ReadAll(io.LimitReader(stdin, 2*check.MaxQuote+1))
+		if err != nil || len(data) > 2*check.MaxQuote {
+			err = errors.New("cannot read quote within the 64 KiB normalized limit")
+		}
+		read <- input{data, err}
+	}()
+	var quote []byte
+	select {
+	case result := <-read:
+		if result.err != nil {
+			fmt.Fprintln(stderr, result.err)
 			return 2
 		}
-		defer f.Close()
-		stdin = f
-	}
-	quote, err := io.ReadAll(io.LimitReader(stdin, 2*check.MaxQuote+1))
-	if err != nil || len(quote) > 2*check.MaxQuote {
-		fmt.Fprintln(stderr, "Cannot read quote within the 64 KiB normalized limit.")
-		return 2
+		quote = result.data
+	case <-ctx.Done():
+		fmt.Fprintln(stderr, "Check interrupted.")
+		return 130
 	}
 	clock, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
