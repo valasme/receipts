@@ -37,7 +37,7 @@ Consider the claim “these two lines occur in this file.” Finding the lines e
 ### Can I diagnose an installed copy privately? · PA01–PA04, T04
 
 - [x] Read the revision and dirty-tree flag from a clean local debug build with go version -m.
-- [x] Stop at main.run in a symbol-bearing build and inspect its caller on Linux.
+- [x] Stop at main.execute in a symbol-bearing build and inspect its caller on Linux.
 - [x] Map a downloaded release to exact source, Go version, build flags and architecture.
 - [x] Rebuild that revision with symbols and demonstrate a source breakpoint. GoReleaser requests stripped binaries for distribution.
 - [ ] Reproduce a report on its actual OS or record the native test gap.
@@ -79,7 +79,7 @@ Consider the claim “these two lines occur in this file.” Finding the lines e
 | Debug | Rebuild the exact tagged source with Go debugging information. The Linux GDB drill below reached the CLI entry point. Release binaries are stripped. |
 | Hard cases and performance | Race detection, parser fuzzing, deadlines and synthetic near-limit measurements are exercised. Measurements cover particular fixtures and hardware. |
 | Dependency health | The CLI uses the Go standard library. The release job runs govulncheck on the compiled files. The build record identifies the compiler shipped. |
-| Workflow and package checks | actionlint validates workflow syntax. GoReleaser builds archives and OS packages. The [release pipeline](../../.github/workflows/release.yml) gates the draft on all six native install jobs. |
+| Workflow and package checks | The Test workflow gates changes with actionlint v1.7.7. GoReleaser builds archives and OS packages. The [release pipeline](../../.github/workflows/release.yml) gates the draft on all six native install jobs. |
 | Distribution and recovery | Checksum and provenance verification and the public install workflow exercise the published artifacts. Operating-system signing and credential recovery are open. |
 
 The release needs one native executable and local repository data. The developer needs Go and a checkout. Forge access, release tooling and signing credentials belong to publishing. A database, cloud account, container engine or model key would add no capability to the first literal quote check.
@@ -93,3 +93,38 @@ From a clean checkout on Linux, build a temporary debug executable:
     gdb -nx -batch -ex 'break main.execute' -ex 'run --help' -ex 'bt 2' /tmp/receipts-debug
 
 Rebuilt the tagged v0.0.1-pre.1 source and stopped in main.execute, with main.main as the next frame. Redirecting its version output to /dev/full on Linux produced a diagnostic and exit 1. The portable failing-writer test checks this contract on all six targets.
+
+
+## Local CI parity
+
+Use a clean checkout with Git, Python 3.11 or newer and Go. Run the same native source check that CI runs with the exact minimum compiler.
+
+```sh
+GOTOOLCHAIN=go1.25.0 python tests/verify_source.py .
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+```
+
+On Linux, replay the diagnostics and packaging fakes with the following commands. Install `jsonschema==4.25.1` in a temporary virtual environment before switching on schema checks.
+
+```sh
+test -z "$(gofmt -l cmd internal)"
+go test -race ./...
+go test ./cmd/receipts -run '^$' -fuzz '^FuzzSavedQuotationMatchesRaw$' -fuzztime=5s
+for target in FuzzLookup FuzzDelta FuzzCommit FuzzLoose FuzzPackIndex; do
+  go test ./internal/check -run '^$' -fuzz "^${target}$" -fuzztime=5s
+done
+python -m unittest discover -s pilot -v
+python -m unittest discover -s packaging -v
+python -m unittest discover -s tests -v
+```
+
+With the virtual environment active, run the same schema suites as CI.
+
+```sh
+go build -o receipts-test.exe ./cmd/receipts
+for suite in acceptance evaluate claim_files file_changes; do
+  RECEIPTS_VALIDATE_SCHEMA=1 python "tests/$suite.py" ./receipts-test.exe
+done
+```
+
+The candidate and transition jobs require native Linux, macOS and Windows runners to qualify their installers and network isolation adapters. See the [release and recovery guide](../release.md) for candidate and public qualification.

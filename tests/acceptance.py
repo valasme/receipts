@@ -8,36 +8,17 @@ import sys
 import tempfile
 from pathlib import Path
 
+from git_fixture import git
+
 binary = Path(sys.argv[1]).resolve()
-env = dict(
-    os.environ,
-    GIT_CONFIG_NOSYSTEM="1",
-    GIT_CONFIG_GLOBAL=os.devnull,
-    GIT_AUTHOR_NAME="Fixture",
-    GIT_AUTHOR_EMAIL="test@example.invalid",
-    GIT_COMMITTER_NAME="Fixture",
-    GIT_COMMITTER_EMAIL="test@example.invalid",
-    GIT_AUTHOR_DATE="2025-01-01T00:00:00Z",
-    GIT_COMMITTER_DATE="2025-01-01T00:00:00Z",
-)
 
 validator = None
 if os.getenv("RECEIPTS_VALIDATE_SCHEMA") == "1":
-    from jsonschema import Draft202012Validator
+    from jsonschema import ValidationError
+    from receipt_contract import validate_quote
+    from receipt_contract import validator as load_validator
 
-    schema = json.loads(
-        (Path(__file__).resolve().parents[1] / "schema/receipt-v1.json").read_text()
-    )
-    Draft202012Validator.check_schema(schema)
-    validator = Draft202012Validator(schema)
-
-
-def git(repo, *args):
-    return (
-        subprocess.check_output(["git", "-C", str(repo), *args], env=env)
-        .strip()
-        .decode()
-    )
+    validator = load_validator("receipt-v1.json")
 
 
 def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
@@ -59,17 +40,21 @@ def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
         check=False,
         input=quote if quote_file is None else None,
         capture_output=True,
+        timeout=20,
     )
     assert p.returncode == expected, (p.returncode, p.stdout, p.stderr)
     if expected:
         assert not p.stdout and p.stderr
         return
     assert not p.stderr
-    if fmt != "json":
+    if fmt not in {"json", "json-evidence"}:
         return p.stdout.decode()
     receipt = json.loads(p.stdout)
     if validator:
-        validator.validate(receipt)
+        try:
+            validate_quote(receipt, validator)
+        except ValidationError as error:
+            raise AssertionError(f"receipt contract: {error.message}") from error
     return receipt
 
 
@@ -78,7 +63,7 @@ def suite(repo, packed):
     git(repo, "config", "core.autocrlf", "false")
     (repo / "src").mkdir()
     (repo / "src/a.txt").write_bytes(b"first\r\nBlue\r\nBlue\r\nlast")
-    (repo / "src/multiline.txt").write_bytes("first\ncafé\n  second\nlast".encode("utf-8"))
+    (repo / "src/multiline.txt").write_bytes("first\ncafé\n  second\nlast".encode())
     (repo / "bin").write_bytes(b"x\x00y")
     (repo / "invalid").write_bytes(b"\xff")
     (repo / "pointer").write_bytes(

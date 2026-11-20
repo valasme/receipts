@@ -1,65 +1,57 @@
-"""Extract the candidate for this native OS and run the installed CLI contract."""
+"""Run the pinned source revision's process contracts on its archived executable."""
 
-import hashlib
-import os
-import platform
+import argparse
 import subprocess
 import sys
-import tarfile
 import tempfile
-import zipfile
 from pathlib import Path
 
-from installed_licenses import NOTICES, verify
+from installed_check import native_target, qualify
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packaging"))
+from bundle import HISTORICAL_WITHOUT_NOTICES, extract_native, verify_bundle
 
 
-def smoke(bundle):
-    system = {"Darwin": "darwin", "Linux": "linux", "Windows": "windows"}[
-        platform.system()
-    ]
-    arch = {"amd64": "amd64", "x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}[
-        platform.machine().lower()
-    ]
-    # On emulated Python, CI passes the runner's actual architecture.
-    arch = {"X64": "amd64", "ARM64": "arm64"}.get(
-        os.environ.get("RECEIPTS_NATIVE_ARCH"), arch
-    )
-    ext = "zip" if system == "windows" else "tar.gz"
-    (archive,) = bundle.glob(f"receipts_*_{system}_{arch}.{ext}")
-    version = archive.name.split("_")[1]
-    digests = {
-        name: digest
-        for digest, name in (
-            x.split() for x in (bundle / "checksums.txt").read_text().splitlines()
-        )
-    }
-    for name, digest in digests.items():
-        assert hashlib.sha256((bundle / name).read_bytes()).hexdigest() == digest, name
-    exe = "receipts.exe" if system == "windows" else "receipts"
-    with tempfile.TemporaryDirectory() as d:
-        dest = Path(d) / exe
-        files = [exe, "LICENSE", NOTICES]
-        if ext == "zip":
-            with zipfile.ZipFile(archive) as z:
-                assert "README.md" in z.namelist()
-                for name in files:
-                    (dest.parent / name).write_bytes(z.read(name))
-        else:
-            with tarfile.open(archive) as z:
-                assert "README.md" in z.getnames()
-                for name in files:
-                    (dest.parent / name).write_bytes(z.extractfile(name).read())
-            dest.chmod(0o755)
-        verify(dest, dest.parent / "LICENSE")
-        actual = subprocess.check_output([dest, "--version"], text=True).strip()
-        assert actual == "receipts " + version, (actual, version)
-        for script in ["acceptance.py", "storage.py", "golden.py", "evaluate.py"]:
-            subprocess.run(
-                [sys.executable, Path(__file__).with_name(script), dest], check=True
+def smoke(root, source, *, tag, commit, workflow=None):
+    bundle = verify_bundle(root, tag=tag, commit=commit, workflow=workflow)
+    revision = subprocess.check_output(
+        ["git", "-C", source, "rev-parse", "--verify", "HEAD"], text=True, timeout=20,
+    ).strip()
+    if revision != commit:
+        raise ValueError(f"Archived test source is {revision}, expected {commit}")
+    system, arch = native_target()
+    with tempfile.TemporaryDirectory() as directory:
+        dest = Path(directory)
+        binary = extract_native(bundle, system, arch, dest)
+        qualify(binary, bundle.version)
+        for relative in (
+            "tests/installed_licenses.py", "tests/acceptance.py", "tests/storage.py",
+            "tests/golden.py", "tests/evaluate.py", "tests/claim_files.py",
+            "tests/file_changes.py", "examples/agent/replay.py",
+        ):
+            script = source / relative
+            historical = (
+                tag == HISTORICAL_WITHOUT_NOTICES and relative == "tests/installed_licenses.py"
+                or tag in {HISTORICAL_WITHOUT_NOTICES, "v0.0.1-pre.2"} and relative in {
+                    "tests/claim_files.py", "tests/file_changes.py", "examples/agent/replay.py",
+                }
             )
-        dest.unlink()
-    print(f"Verified and removed {system}/{arch} {version}.")
+            if historical and not script.is_file():
+                print(f"{commit}: {relative} was not present", flush=True)
+                continue
+            print(f"Archived {system}/{arch} {bundle.version}: {relative}", flush=True)
+            args = [sys.executable, script, binary]
+            if relative == "tests/installed_licenses.py":
+                args.append(dest / "LICENSE")
+            subprocess.run(args, check=True, timeout=180, cwd=source)
+    print(f"Verified and removed {system}/{arch} {bundle.version}.")
 
 
 if __name__ == "__main__":
-    smoke(Path(sys.argv[1]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("root", type=Path)
+    parser.add_argument("source", type=lambda value: Path(value).resolve())
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--commit", required=True)
+    parser.add_argument("--workflow")
+    smoke(**vars(parser.parse_args()))

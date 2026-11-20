@@ -1,5 +1,6 @@
 """Check file-change receipts through the public review CLI."""
 
+import ast
 import json
 import os
 import subprocess
@@ -7,24 +8,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-
-ENV = {
-    **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
-    "GIT_CONFIG_NOSYSTEM": "1",
-    "GIT_CONFIG_GLOBAL": os.devnull,
-    "GIT_AUTHOR_NAME": "Fixture",
-    "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
-    "GIT_AUTHOR_DATE": "2025-01-01T00:00:00Z",
-    "GIT_COMMITTER_NAME": "Fixture",
-    "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
-    "GIT_COMMITTER_DATE": "2025-01-01T00:00:00Z",
-}
+from git_fixture import env, git_bytes
 
 
 def git(repo, *args, data=None):
-    return subprocess.check_output(
-        ["git", "-C", repo, *args], input=data, env=ENV, timeout=20,
-    ).decode().rstrip("\n")
+    return git_bytes(repo, *args, data=data).decode().rstrip("\n")
 
 
 def tree(repo, files, extra=()):
@@ -47,7 +35,7 @@ def review(binary, repo, comparison, head, body, proposal):
     return subprocess.run(
         [binary, "review", "--repo", repo, "--rev", head, *pin,
          "--submission", "-", "--proposal", proposal_file],
-        input=body.encode(), capture_output=True, timeout=20,
+        check=False, input=body.encode(), capture_output=True, timeout=20,
     )
 
 
@@ -69,7 +57,8 @@ def check_changes(binary, repo, comparison, head, expected):
         assert section.startswith(
             f"Submission line {line}\n{verdict} · file changed\nPath {json.dumps(path)}\n"
         ), section
-        assert section.rstrip("\n").endswith(f"Statement · {json.dumps(claims[line - 1]['statement'])}"), section
+        assert "Claim checked · The file at this exact path changed between the two commits.\n" in section, section
+        assert section.rstrip("\n").endswith(f"Submission statement · {json.dumps(claims[line - 1]['statement'])}"), section
         for label, rev in (("Comparison", comparison), ("Head", head)):
             assert f"{label} commit {rev}\n" in section, section
         receipts[path] = section
@@ -94,6 +83,11 @@ def compare_paths(binary, repo):
     assert git(repo, "ls-tree", head, "--", "Guide.txt") == ""
     equal = check_changes(binary, repo, base_tip, head, {"guide.txt": "Contradicted", "Guide.txt": "Contradicted"})
     assert equal["Guide.txt"].count(f'Tree {head_tree} · missing "Guide.txt"') == 2
+    assert "The path is absent in both commits." in equal["Guide.txt"]
+    assert "The file has the same blob ID and Git mode in both commits." in equal["guide.txt"]
+    version = subprocess.check_output([binary, "--version"], timeout=25, text=True).strip().removeprefix("receipts ")
+    assert f"Checker version {version}" in preview
+    assert "git-path-blob-and-mode-v1" in preview
 
     renamed = commit(repo, {"new guide.txt": b"New guide\n"}, head)
     assert git(repo, "diff", "-M", "--name-status", head, renamed) == "R100\tguide.txt\tnew guide.txt"
@@ -136,10 +130,25 @@ def compare_modes_and_kinds(binary, repo):
     assert f"Tree {child} · mode 100644 · Blob {child_blob}" in receipts["dir/item.txt"]
 
 
+def reuse_comparison_blobs(binary, repo):
+    # Three distinct 7 MiB blobs fit the shared 32 MiB budget only if
+    # comparing the same blob at both commits reuses its verification.
+    paths = ["large-a", "large-b", "large-c"]
+    comparison = commit(repo, {path: path.encode() + b"x" * (7 << 20) for path in paths})
+    head = commit(repo, {}, comparison, extra=tuple(
+        f"100755 blob {git(repo, 'rev-parse', comparison + ':' + path)}\t{path}\n"
+        for path in paths
+    ))
+    observed = check_changes(binary, repo, comparison, head, dict.fromkeys(paths, "Verified"))
+    for result in observed.values():
+        assert "mode 100644 · Blob " in result and "mode 100755 · Blob " in result
+
+
+
 def unavailable_objects(binary, repo, comparison, head):
     missing_commit = "1" * 40
     absent = subprocess.run(
-        ["git", "-C", repo, "cat-file", "-e", missing_commit], env=ENV, capture_output=True, timeout=20,
+        ["git", "-C", repo, "cat-file", "-e", missing_commit], check=False, env=env, capture_output=True, timeout=20,
     )
     assert absent.returncode != 0, absent
     missing = check_changes(binary, repo, missing_commit, head, {"guide.txt": "Can't check"})
@@ -150,7 +159,7 @@ def unavailable_objects(binary, repo, comparison, head):
     loose.chmod(0o600)
     loose.unlink()
     absent = subprocess.run(
-        ["git", "-C", repo, "cat-file", "-e", blob], env=ENV, capture_output=True, timeout=20,
+        ["git", "-C", repo, "cat-file", "-e", blob], check=False, env=env, capture_output=True, timeout=20,
     )
     assert absent.returncode != 0, absent
     missing = check_changes(binary, repo, comparison, head, {"guide.txt": "Can't check"})
@@ -189,23 +198,102 @@ def validate_proposals(binary, repo, comparison, head):
     assert result.returncode == 2 and not result.stdout and b"repository-relative file path" in result.stderr, result
 
     quote = {"path": "guide.txt", "quote": "New guide\n", "source_lines": [1, 4]}
-    claim = {"path": "guide.txt", "statement": "This PR\r\nupdates `guide.txt`.", "source_lines": [5, 6]}
+    claim = {"path": "guide.txt", "statement": "This PR\r\nupdates `guide.txt` and makes export twice as fast.", "source_lines": [5, 6]}
+    submission = "From `guide.txt`:\r\n```text\r\nNew guide\r\n```\r\n" + claim["statement"]
+    proposal = {"claims": [quote], "file_changes": [claim], "unresolved": []}
+    blob = git(repo, "rev-parse", f"{head}:guide.txt")
+    result = review(binary, repo, None, blob, submission, proposal)
+    assert result.returncode == 2 and not result.stdout and b"require --compare" in result.stderr, result
     result = review(
-        binary, repo, comparison, head,
-        "From `guide.txt`:\r\n```text\r\nNew guide\r\n```\r\n" + claim["statement"],
-        {"claims": [quote], "file_changes": [claim], "unresolved": []},
+        binary, repo, comparison.upper(), head.upper(),
+        submission, proposal,
     )
     assert result.returncode == 0 and not result.stderr, result
     preview = result.stdout.decode()
+    assert preview.startswith(f"Review preview\nRequested commit {head}\n"), preview
+    assert f"Comparison commit {comparison}\n" in preview and f"Head commit {head}\n" in preview, preview
     assert "Submission lines 1–4\nVerified · exact source quote" in preview, preview
     assert "Submission lines 5–6\nVerified · file changed" in preview, preview
+    assert "Claim checked · The file at this exact path changed between the two commits.\n" in preview, preview
+    display = preview.split("Submission statement\n", 1)[1].splitlines()
+    assert all(line.startswith('  "') and len(line) <= 40 for line in display), preview
+    assert "".join(ast.literal_eval(line.strip()) for line in display) == claim["statement"].replace("\r\n", "\n")
+    assert f"Requested commit {head}\nComparison commit {comparison}" in preview
+
+
+
+def literal_proposals(binary, repo, comparison, head):
+    citation = "From `guide.txt`:\n```\nNew guide\n```"
+    quote = {"path": "guide.txt", "quote": "New guide\n", "source_lines": [1, 4]}
+    outcome = review(binary, repo, comparison, head, citation, {
+        "schema_major": 1, "claims": [quote], "unresolved": [],
+    })
+    assert outcome.returncode == 0 and b"Comparison commit unused" in outcome.stdout, outcome
+    if os.environ.get("RECEIPTS_VALIDATE_SCHEMA") == "1":
+        from receipt_contract import validator
+
+        schema = validator("review-proposal-v1.json")
+        schema.validate({"claims": [quote], "unresolved": []})
+        assert not schema.is_valid({"schema_major": 2, "claims": [quote], "unresolved": []})
+    oversized = " " * ((1 << 20) + 1)
+    bad = review(binary, repo, None, head, oversized, {"claims": [], "unresolved": []})
+    assert bad.returncode == 2 and b"submission input exceeds the limit of 1048576 bytes" in bad.stderr, bad
+    bad = review(binary, repo, None, head, citation, {"claims": [], "unresolved": [], "extra": oversized})
+    assert bad.returncode == 2 and b"proposal input exceeds the limit of 1048576 bytes" in bad.stderr, bad
+    for outer in ("````", "<!--"):
+        result = review(binary, repo, None, head, f"{outer}\n{citation}\n{outer}", {
+            "claims": [{**quote, "source_lines": [2, 5]}], "unresolved": [],
+        })
+        assert result.returncode == 0 and b"Verified" in result.stdout, result
+    bad = review(binary, repo, None, head, citation, {
+        "schema_major": 2, "claims": [quote], "unresolved": [],
+    })
+    assert bad.returncode == 2 and b"schema_major" in bad.stderr and not bad.stdout, bad
+    bad = review(binary, repo, None, head, citation, {
+        "claims": [{**quote, "quote": "New guide"}], "unresolved": [],
+    })
+    assert bad.returncode == 2 and b"must include the LF" in bad.stderr, bad
+
+    odd_path = "a`b.txt"
+    exact = commit(repo, {odd_path: b"exact final line"}, head)
+    raw = subprocess.run(
+        [binary, "check", "--repo", repo, "--rev", exact, "--path", odd_path, "--quote-file", "-"],
+        check=False, input=b"exact final line", capture_output=True, timeout=20,
+    )
+    assert raw.returncode == 0 and raw.stdout.startswith(b"Verified"), raw
+    bad = review(binary, repo, None, exact, f"`{odd_path}`:\n```\nexact final line\n```", {
+        "claims": [{**quote, "path": odd_path, "quote": "exact final line\n"}], "unresolved": [],
+    })
+    assert bad.returncode == 2 and b"path contains a backtick" in bad.stderr, bad
+
+    change = file_change("guide.txt", 5)
+    body = [citation, change["statement"], *[f"Context {i}" for i in range(15)]]
+    unresolved = [{"statement": text, "source_lines": [line, line]} for line, text in enumerate(body[2:], 6)]
+    for count in (14, 15):
+        result = review(binary, repo, comparison, head, "\n".join(body), {
+            "claims": [quote], "file_changes": [change], "unresolved": unresolved[:count],
+        })
+        if count == 14:
+            assert result.returncode == 0 and b"Context 13" in result.stdout, result
+        else:
+            assert result.returncode == 2 and not result.stdout and b"16 total entries" in result.stderr, result
+    result = review(binary, repo, comparison, head, "\n".join(body), {
+        "claims": [quote], "file_changes": [change],
+        "unresolved": [{"statement": "```", "source_lines": [4, 4]}],
+    })
+    assert result.returncode == 2 and not result.stdout, result
+    assert all(phrase.encode() in result.stderr for phrase in (
+        "proposal claim 1 (lines 1–4)", "unresolved entry 1 (lines 4–4)",
+    )), result
 
 
 def run(binary, repo):
     git(repo, "init", "-q", "--template=", "--object-format=sha1")
     comparison, head = compare_paths(binary, repo)
     compare_modes_and_kinds(binary, repo)
+    reuse_comparison_blobs(binary, repo)
     validate_proposals(binary, repo, comparison, head)
+    literal_proposals(binary, repo, comparison, head)
     unavailable_objects(binary, repo, comparison, head)
 
 

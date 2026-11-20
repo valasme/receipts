@@ -12,14 +12,28 @@ on:
         type: string
 permissions:
   contents: read
-concurrency:
-  group: receipt-pilot-${{ github.event.issue.number || github.event.pull_request.number || inputs.submission }}
-  cancel-in-progress: false
-env:
-  SUBMISSION: ${{ github.event.issue.number || github.event.pull_request.number || inputs.submission }}
 jobs:
-  preview:
+  identify:
     if: github.repository == 'valasme/receipts' && !github.event.repository.private && vars.RECEIPTS_PREVIEW == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      submission: ${{ steps.identity.outputs.submission }}
+    steps:
+      - id: identity
+        shell: bash
+        env:
+          SUBMISSION: ${{ github.event.issue.number || github.event.pull_request.number || inputs.submission }}
+        run: |
+          if [[ ! "$SUBMISSION" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo 'Supply the canonical decimal submission number.' >&2
+            exit 2
+          fi
+          printf 'submission=%s\n' "$SUBMISSION" >> "$GITHUB_OUTPUT"
+  preview:
+    needs: identify
+    env:
+      SUBMISSION: ${{ needs.identify.outputs.submission }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -41,8 +55,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
   publish:
-    needs: preview
-    if: vars.RECEIPTS_PUBLISH == 'true'
+    needs: [identify, preview]
+    concurrency:
+      group: receipt-pilot-${{ needs.identify.outputs.submission }}
+      cancel-in-progress: false
+    env:
+      SUBMISSION: ${{ needs.identify.outputs.submission }}
+    if: ${{ always() && needs.identify.result == 'success' && (needs.preview.result == 'success' || needs.preview.result == 'failure') && vars.RECEIPTS_PUBLISH == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -56,10 +75,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        if: needs.preview.result == 'success'
         with:
           go-version-file: go.mod
           cache: false
       - run: go build -o receipts-pilot ./cmd/receipts
-      - run: python pilot/github.py publish
+        if: needs.preview.result == 'success'
+      - shell: bash
+        run: |
+          if [[ "$PREVIEW_RESULT" == failure ]]; then
+            python pilot/github.py reconcile
+          else
+            python pilot/github.py publish
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
+          PREVIEW_RESULT: ${{ needs.preview.result }}

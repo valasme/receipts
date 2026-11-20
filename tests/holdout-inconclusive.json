@@ -1,0 +1,18 @@
+{
+  "catalog": [
+    ["malformed-encoding", "row.dat", "unavailable record", "unsupported_content"],
+    ["missing-blob", "report.xml", "<entry/>", "object_unavailable"],
+    ["regular-ancestor", "old-index.csv/row", "42,red", "unsupported_kind"]
+  ],
+  "verse": [
+    ["gitlink", "anthology", "First stanza", "unsupported_kind"],
+    ["overlarge", "collected.txt", "final refrain", "resource_limit"],
+    ["missing-blob", "footnote.txt", "unpublished note", "object_unavailable"]
+  ],
+  "script": [
+    ["malformed-encoding", "fixture.out", "step completed", "unsupported_content"],
+    ["gitlink", "toolchain", "version stable", "unsupported_kind"],
+    ["regular-ancestor", "entrypoint/arg", "--dry-run", "unsupported_kind"],
+    ["overlarge", "transcript.log", "last invocation", "resource_limit"]
+  ]
+}

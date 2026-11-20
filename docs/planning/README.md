@@ -11,6 +11,7 @@
 | [Council decisions](council.md) | Which objections changed the plan and what would reopen a choice |
 | [Maintainer and debugging checklist](maintainer-checklist.md) | How to diagnose a broken command, which tools exist and which skills the release still needs to demonstrate |
 | [520-point review inventory](review-inventory.md) | Which individual concerns belong to local alpha, release, pilot or later discovery |
+| [Architecture and CLI audit remediation](audit-remediation.md) | Evidence and open verification for the 123 audit findings |
 
 The [implementation verification record](../verification.md) gives the source revision, test outcomes, council decisions and human evidence still needed.
 
@@ -57,4 +58,4 @@ For each milestone, record the tested checker revision, corpus or fixture versio
 
 ## Planning review
 
-The starter review predates implementation. The [published limited preview](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.2) includes the local quotation checker. The [qualification record](../verification.md) covers correctness, native installs, limits and open pilot gates. Native signing is deferred until the owner approves v1. [Signing decision](../adr/0002-defer-native-signing-until-v1.md) The 12 paired human timings are outstanding.
+The starter review predates implementation. The [published limited preview](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.2) includes the local quotation checker. The [qualification record](../verification.md) covers correctness, native installs, limits and open pilot gates. Native signing is deferred until the owner approves v1. [Signing decision](../adr/0002-defer-native-signing-until-v1.md) The first 12-pair trial was unqualified. A fresh trial with observed revisions, blobs and the installed checker version is outstanding.

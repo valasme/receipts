@@ -1,6 +1,7 @@
 """Replay the captured agent proposal against a synthetic local Git repository."""
 
 import argparse
+import ast
 import json
 import os
 import select
@@ -8,7 +9,6 @@ import signal
 import subprocess
 import tempfile
 from pathlib import Path
-
 
 HERE = Path(__file__).resolve().parent
 ENV = {
@@ -76,42 +76,57 @@ def review_command(binary, repo, rev, proposal):
 def review(binary, repo, rev, submission, proposal):
     return subprocess.run(
         review_command(binary, repo, rev, proposal),
-        input=submission, capture_output=True, timeout=20,
+        check=False, input=submission, capture_output=True, timeout=20,
     )
 
 
-def check_preview(binary, repo, rev, proposal_file, claims):
-    submission = (HERE / "submission.md").read_bytes().replace(b"\r\n", b"\n")
+def shown_context(section, label):
+    _, text = section.split("\n" + label, 1)
+    if text.startswith(" · "):
+        return ast.literal_eval(text[3:].strip())
+    return "".join(ast.literal_eval(line.strip()) for line in text.splitlines() if line)
+
+
+def check_preview(binary, repo, rev, proposal, submission):
     extra = repo / "review-proposal.json"
-    proposal = json.loads(proposal_file.read_bytes())
-    proposal["claims"] = sorted(claims, key=lambda claim: claim["source_lines"][0], reverse=True)
-    extra.write_bytes(json.dumps(proposal).encode())
-    submission_file = repo / "submission.md"
-    submission_file.write_bytes(submission.replace(b"\n", b"\r\n"))
-    result = subprocess.run(
-        [binary, "review", "--repo", repo, "--rev", rev,
-         "--submission", submission_file, "--proposal", extra],
-        capture_output=True, timeout=20,
-    )
+    entries = [
+        (item["source_lines"], label, item)
+        for key, label in (("claims", "Submission citation"), ("unresolved", "Unresolved"))
+        for item in proposal[key]
+    ]
+    reordered = {**proposal, "claims": list(reversed(proposal["claims"]))}
+    extra.write_bytes(json.dumps(reordered).encode())
+    result = review(binary, repo, rev, submission.replace(b"\n", b"\r\n"), extra)
     assert result.returncode == 0 and result.stderr == b"", result
     preview = result.stdout.decode()
-    expected = f"Review preview\nRequested commit {rev}\n"
+    header, *sections = preview.split("\n\nSubmission ")
+    assert header.splitlines()[:2] == ["Review preview", f"Requested commit {rev}"], preview
+    assert len(sections) == len(entries), preview
     lines = submission.decode().splitlines()
-    for item in sorted(claims, key=lambda claim: claim["source_lines"][0]):
-        start, end = item["source_lines"]
-        replay_result = subprocess.run(
-            [binary, "check", "--repo", repo, "--rev", rev, "--path", item["path"], "--quote-file", "-"],
-            input=item["quote"].encode(), capture_output=True, check=True, timeout=20,
-        )
-        expected += f"\nSubmission lines {start}–{end}\n" + replay_result.stdout.decode()
-        expected += f"Citation · {json.dumps(lines[start - 1], ensure_ascii=False)}\n"
-    expected += '\nSubmission line 20\nUnresolved · "This change makes export twice as fast."\n'
-    assert preview == expected, preview
+    for ((start, end), label, item), section in zip(sorted(entries), sections):
+        location = f"line {start}" if start == end else f"lines {start}–{end}"
+        assert section.startswith(location + "\n"), section
+        if label == "Submission citation":
+            independent_text = subprocess.check_output(
+                [binary, "check", "--repo", repo, "--rev", rev, "--path", item["path"], "--quote-file", "-"],
+                input=item["quote"].encode(), timeout=20,
+            ).decode()
+            assert independent_text in section, section
+            assert shown_context(section, label) == lines[start - 1], section
+        else:
+            expected = "\n".join(lines[start - 1:end])
+            assert item["statement"] == expected
+            assert shown_context(section, label) == expected, section
+    return preview
 
+
+def exercise_bundled_preview(binary, repo, rev, proposal_file, claims, submission):
+    extra = repo / "review-proposal.json"
+    first_claim_index = min(range(len(claims)), key=lambda index: claims[index]["source_lines"][0])
     changed = submission.replace(b"Export starts offline.", b"Export starts online.", 1)
     result = review(binary, repo, rev, changed, proposal_file)
     assert result.returncode == 2 and result.stdout == b"", result
-    assert b"proposal claim 1 does not match" in result.stderr, result
+    assert f"proposal claim {first_claim_index + 1} does not match".encode() in result.stderr, result
 
     extra.write_bytes(json.dumps({"claims": [
         {"path": "guide.txt", "quote": "Export starts offline.\r\r\n", "source_lines": [1, 4]},
@@ -126,7 +141,7 @@ def check_preview(binary, repo, rev, proposal_file, claims):
     result = subprocess.run(
         [binary, "review", "--repo", repo, "--rev", rev, "--rev", rev,
          "--submission", "-", "--proposal", extra],
-        input=b"No exact quotes.\n", capture_output=True, timeout=20,
+        check=False, input=b"No exact quotes.\n", capture_output=True, timeout=20,
     )
     assert result.returncode == 2 and result.stdout == b"", result
 
@@ -141,7 +156,6 @@ def check_preview(binary, repo, rev, proposal_file, claims):
     if os.name == "posix":
         check_preview_delivery(binary, repo, rev, extra)
 
-    return preview
 
 
 def check_preview_delivery(binary, repo, rev, proposal):
@@ -185,15 +199,23 @@ def file_change_preview(binary, repo, comparison, head):
     diff = git(repo, "diff", "--name-status", comparison, head, "--", "guide.txt")
     assert diff == b"M\tguide.txt\n", diff
     assert result.stderr == b"" and b"Verified" in result.stdout, result
-    return result.stdout.decode()
+    preview = result.stdout.decode()
+    before, after = preview.split(f"\nHead commit {head}\n", 1)
+    before = before.rsplit(f"\nComparison commit {comparison}\n", 1)[1]
+    for side, revision in ((before, comparison), (after, head)):
+        blob = git(repo, "rev-parse", f"{revision}:guide.txt").decode().strip()
+        tree = git(repo, "rev-parse", f"{revision}^{{tree}}").decode().strip()
+        assert f"Blob {blob}" in side and f"Tree {tree}" in side and "mode 100644" in side, side
+    return preview
 
 
 def replay(binary, proposal_file, show_file_change):
     proposal = json.loads(proposal_file.read_bytes())
-    submission = (HERE / "submission.md").read_text(encoding="utf-8").splitlines()
+    submission = (HERE / "submission.md").read_bytes().replace(b"\r\n", b"\n")
+    bundled = proposal_file.resolve() == HERE / "proposal.json"
     claims = []
     for item in proposal["claims"]:
-        lines = source_lines(submission, item["source_lines"])
+        lines = source_lines(submission.decode().splitlines(), item["source_lines"])
         path, quote = item["path"], item["quote"]
         assert f"`{path}`" in lines[0]
         assert lines[1] == "```text" and lines[-1] == "```"
@@ -204,12 +226,17 @@ def replay(binary, proposal_file, show_file_change):
         repo = Path(directory)
         comparison, rev = fixture(repo)
         scope = {"schema_major": 1, "rev": rev}
-        preview = check_preview(binary, repo, rev, proposal_file, proposal["claims"])
-        result = check(binary, repo, "--batch-file", {**scope, "claims": claims})
-        assert result["schema_major"] == 1
-        assert len(result["results"]) == len(claims) == 3
+        preview = check_preview(binary, repo, rev, proposal, submission)
+        if bundled:
+            exercise_bundled_preview(binary, repo, rev, proposal_file, proposal["claims"], submission)
+        results = []
+        if claims:
+            result = check(binary, repo, "--batch-file", {**scope, "claims": claims})
+            assert result["schema_major"] == 1
+            results = result["results"]
+            assert len(results) == len(claims)
         observed = set()
-        for claim, entry in zip(claims, result["results"]):
+        for claim, entry in zip(claims, results):
             receipt = entry["receipt"]
             assert receipt == check(binary, repo, "--claim-file", {**scope, **claim})
             ref = f'{rev}:{claim["path"]}'
@@ -223,26 +250,23 @@ def replay(binary, proposal_file, show_file_change):
                 end = start + exact[:-1].count(b"\n")
                 assert receipt["evidence"]["lines"] == {"start": start, "end": end}
             else:
-                assert exact.count(b"\n") >= 2
                 expected = "contradicted", "quote_absent"
             assert (receipt["verdict"], receipt["reason"]) == expected
             assert receipt["evidence"]["blob_id"] == git(repo, "rev-parse", ref).decode().strip()
             observed.add(receipt["verdict"])
-        assert observed == {"verified", "contradicted", "cant_check"}
+        if bundled:
+            assert observed == {"verified", "contradicted", "cant_check"}
         if show_file_change:
             preview = file_change_preview(binary, repo, comparison, rev)
 
-    assert len(proposal["unresolved"]) == 1
-    for item in proposal["unresolved"]:
-        lines = source_lines(submission, item["source_lines"])
-        assert lines == [item["statement"]] == ["This change makes export twice as fast."]
     print(preview, end="")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
-    parser.add_argument("--proposal", type=Path, default=HERE / "proposal.json")
+    parser.add_argument("--proposal", type=Path, default=HERE / "proposal.json",
+                        help="quotation and unresolved entries for the bundled submission")
     parser.add_argument("--file-change", action="store_true", help="show a file-change preview")
     args = parser.parse_args()
     replay(args.binary.resolve(), args.proposal, args.file_change)

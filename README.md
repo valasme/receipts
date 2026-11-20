@@ -1,6 +1,6 @@
 # Receipts
 
-Check whether an exact quotation appears in a source file at a particular Git commit. Receipts reads local Git objects and returns the evidence for one claim. Your working copy can contain newer, uncommitted edits.
+Check whether an exact quotation appears in a source file at a particular Git commit. Receipts reads local Git objects, so uncommitted edits do not affect the evidence. The development build can also preview quotations and exact-path file changes alongside the submission lines that proposed them.
 
 ## Install and run
 
@@ -85,7 +85,7 @@ The development build accepts versioned UTF-8 JSON claim files. As the caller, s
 {"schema_major":1,"rev":"0123456789abcdef0123456789abcdef01234567","path":"README.md","quote":"# Receipts\n"}
 ```
 
-Replace the example commit with your full commit ID. Run `receipts check --repo . --claim-file claim.json --format json`. Single claims support all three renderers and produce the same receipt as the corresponding flags. Keep the saved file private when it contains sensitive source text.
+Replace the example commit with your full commit ID. Run `receipts check --repo . --claim-file claim.json --format json`. Single claims support text, Markdown and both JSON formats and produce the same receipt as the corresponding flags. Keep the saved file private when it contains sensitive source text.
 
 For a batch, use one commit and a list of quotations:
 
@@ -93,7 +93,7 @@ For a batch, use one commit and a list of quotations:
 {"schema_major":1,"rev":"0123456789abcdef0123456789abcdef01234567","claims":[{"path":"README.md","quote":"# Receipts\n"},{"path":"go.mod","quote":"go 1.25.0\n"}]}
 ```
 
-Run `receipts check --repo . --batch-file batch.json`. The output is a JSON object with `schema_major: 1` and `results` in input order. Each result has a `receipt` using the existing receipt schema or an `error` with a diagnostic for invalid input. An unavailable object yields a receipt with verdict `cant_check`. A complete batch exits 0 even when some items have errors. An invalid envelope exits 2 with a diagnostic on stderr. Use `-` as either file name to read stdin.
+Run `receipts check --repo . --batch-file batch.json`. The output is a JSON object with `schema_major: 1` and `results` in input order. Each result has a `receipt` using the existing receipt schema or an `error` with a diagnostic for invalid input. An unavailable object yields a receipt with verdict `cant_check`. A complete batch exits 0 even when some items have errors. An invalid envelope exits 2 with a diagnostic on stderr. Use `-` as either file name to read stdin. Use a regular file for any named input. [JSON input and result contracts](schema/README.md)
 
 The single-claim input limit is 768 KiB. A batch can contain 1–16 claims, with at most 1 MiB of input and a shared five-second lookup budget. Use the exact JSON field names and include each field once. Existing path and quote limits apply to each claim. See the [working agent example](examples/agent/README.md) for a PR-to-receipt walkthrough.
 
@@ -107,17 +107,25 @@ receipts review --submission submission.md --proposal proposal.json --rev COMMIT
 
 The preview shows where each checked quote or unresolved statement appears in the submission. Each quote also shows its citation and Git evidence. A proposal whose source lines or text disagree with the submission returns an input error. Review the proposal and the surrounding submission text for context. Run `python examples/agent/replay.py ./receipts-demo.exe` with a development binary to try the worked example.
 
+Previews include citation lines and verbatim statements from the submission. Review that text and the repository paths before sharing a preview.
+
 To check whether a file changed, add a file-change proposal and pass `--compare COMMIT` alongside the head commit in `--rev`. The preview shows evidence for the exact path at both commits. [File-change walkthrough](examples/agent/README.md#check-whether-a-file-changed)
 
 ## Read the result
 
 **Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.
 
-Text is the default. Use `--format markdown` for a pasteable block and `--format json` for schema-major-1 output. All three verdicts exit 0. Invalid inputs exit 2. Output failures exit 1. Check both the exit status and complete JSON before using a receipt. A receipt can reveal a private path or guessable quote digest.
+Text is the default. Use `--format markdown` for a pasteable block and `--format json` for the existing schema-major-1 layout. In the development CLI, opt in to additional evidence with `--format json-evidence` for single quotes or batches. All three verdicts exit 0. Invalid inputs exit 2. Output failures exit 1. Check both the exit status and complete JSON before using a receipt. Press Ctrl+C to interrupt and discard any partial output. A receipt can reveal a private path or guessable quote digest. [Receipt schema and compatibility](schema/README.md)
+
+Use `receipts check --help` for quotation input and output options, or `receipts review --help` for the review preview. Interrupting a check or review with Ctrl+C exits 130.
 
 ## Supported storage and limits
 
-Use a regular local clone or bare SHA-1 repository. Receipts reads loose objects, v2 indexes, packed objects and bounded offset deltas. Reference deltas, alternate object databases and linked worktree indirections may return an inconclusive receipt. Quotation checks leave symlinks, submodules, LFS pointers and binary source unsupported. Reads never invoke Git or execute submitted code. The checker accepts a 64 KiB normalized quote, an 8 MiB source and up to 128 path components. Conservative limits on index bytes, total decoded bytes and a five-second object lookup deadline also apply.
+Use a regular local clone or bare SHA-1 repository. Omit `--repo` to search upward from the current directory. An explicit `--repo` selects only the supplied clone root, bare repository, or Git directory. Keep `--path` relative to the repository root at any working directory. Linked worktrees and separate Git directory pointers yield `unsupported_storage`. Use the regular clone or a self-contained bare repository for those commits.
+
+Receipts reads loose objects, v2 pack indexes and packed objects with up to 16 offset-delta levels. A missing object that needs an alternate database or an unsupported pack representation remains inconclusive. The receipt identifies unsupported storage, including SHA-256, version 1 pack indexes and reference deltas, when detected. Reads stay local and ignore replace refs. Quotation checks leave symlinks, submodules, Git LFS v1 pointers and binary source unsupported.
+
+The five-second object-access and comparison deadline begins after input is read and parsed. A named input or stdin can wait for data until it finishes or you interrupt the command. One command shares the deadline and the repository budgets across all its claims. The deadline bounds how long the command waits for repository evidence. A filesystem operation already blocked in the kernel may finish later. Limits include 8 MiB per decoded object, 4 MiB per pack index and 256 KiB for local Git config, with totals of 32 MiB of decoded objects and index data processed, 64 MiB of filesystem bytes read, and 4,096 filesystem operations. A pack directory scan allows 4,096 entries and up to 256 index candidates. A tree allows 32,768 entries and one command can inspect 131,072 entries across all its lookups. The human receipt names the limiting resource. With `--format json-evidence`, see `detail`.
 
 ## Contribute and report problems
 

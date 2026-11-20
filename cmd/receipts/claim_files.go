@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"slices"
@@ -14,7 +15,7 @@ import (
 
 const maxClaimFile = 768 << 10
 
-var errInputRead = errors.New("cannot read input within the size limit")
+var errInputTooLarge = errors.New("input exceeds the limit")
 
 type quotation struct {
 	path string
@@ -22,25 +23,46 @@ type quotation struct {
 }
 
 func readInput(ctx context.Context, stdin io.Reader, name string, limit int, label string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	type result struct {
 		data []byte
 		err  error
 	}
 	done := make(chan result, 1)
+	// The process owns named files. The caller owns stdin. On interruption
+	// the CLI exits, which also releases any OS read still blocked on stdin.
 	go func() {
 		reader := stdin
 		if name != "-" {
-			file, err := os.Open(name)
+			info, err := os.Stat(name)
 			if err != nil {
-				done <- result{err: errors.New("cannot open " + label + " file; check its path and permissions")}
+				done <- result{err: fmt.Errorf("cannot open %s file; check its path and permissions", label)}
+				return
+			}
+			if !info.Mode().IsRegular() {
+				done <- result{err: fmt.Errorf("%s input must be a regular file or - for stdin", label)}
+				return
+			}
+			file, err := openInput(name)
+			if err != nil {
+				done <- result{err: fmt.Errorf("cannot open %s file; check its path and permissions", label)}
 				return
 			}
 			defer file.Close()
+			info, err = file.Stat()
+			if err != nil || !info.Mode().IsRegular() {
+				done <- result{err: fmt.Errorf("%s input must be a regular file or - for stdin", label)}
+				return
+			}
 			reader = file
 		}
 		data, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
-		if err != nil || len(data) > limit {
-			err = errInputRead
+		if len(data) > limit {
+			err = fmt.Errorf("%s %w of %d bytes", label, errInputTooLarge, limit)
+		} else if err != nil {
+			err = fmt.Errorf("cannot read %s input; check that it is readable", label)
 		}
 		done <- result{data, err}
 	}()
@@ -53,45 +75,63 @@ func readInput(ctx context.Context, stdin io.Reader, name string, limit int, lab
 }
 
 func readClaim(data []byte) (string, quotation, error) {
-	fields := objectFields(data, "schema_major", "rev", "path", "quote")
-	rev, okRev := jsonString(fields["rev"])
-	quote, okQuote := readQuotation(fields)
-	if string(fields["schema_major"]) != "1" || !okRev || !okQuote {
-		return "", quotation{}, errors.New("invalid claim file; expected schema_major 1, rev, path, and quote")
+	fields, err := objectFields(data, "schema_major", "rev", "path", "quote")
+	if err != nil {
+		return "", quotation{}, fmt.Errorf("claim file: %w", err)
+	}
+	if string(fields["schema_major"]) != "1" {
+		return "", quotation{}, errors.New("claim file requires schema_major 1")
+	}
+	rev, ok := jsonString(fields["rev"])
+	if !ok {
+		return "", quotation{}, errors.New("claim file requires rev as an exact JSON string")
+	}
+	quote, err := readQuotation(fields)
+	if err != nil {
+		return "", quotation{}, fmt.Errorf("claim file: %w", err)
 	}
 	return rev, quote, nil
 }
 
 // JSON decoding into a struct permits case aliases and repeated keys.
-func objectFields(data []byte, names ...string) map[string]json.RawMessage {
+func objectFields(data []byte, names ...string) (map[string]json.RawMessage, error) {
 	if !utf8.Valid(data) || !json.Valid(data) {
-		return nil
+		return nil, errors.New("expected a valid UTF-8 JSON object")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	start, _ := decoder.Token()
 	if start != json.Delim('{') {
-		return nil
+		return nil, errors.New("expected a JSON object")
 	}
 	fields := make(map[string]json.RawMessage, len(names))
 	for decoder.More() {
 		token, _ := decoder.Token()
 		name := token.(string)
-		if !slices.Contains(names, name) || fields[name] != nil {
-			return nil
+		if !slices.Contains(names, name) {
+			return nil, errors.New("unknown field")
+		}
+		if fields[name] != nil {
+			return nil, fmt.Errorf("duplicate %s field", name)
 		}
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
-			return nil
+			return nil, fmt.Errorf("invalid %s field", name)
 		}
 		fields[name] = value
 	}
-	return fields
+	return fields, nil
 }
 
-func readQuotation(fields map[string]json.RawMessage) (quotation, bool) {
-	path, okPath := jsonString(fields["path"])
-	quote, okQuote := jsonString(fields["quote"])
-	return quotation{path, quote}, okPath && okQuote
+func readQuotation(fields map[string]json.RawMessage) (quotation, error) {
+	path, ok := jsonString(fields["path"])
+	if !ok {
+		return quotation{}, errors.New("path must be an exact JSON string")
+	}
+	quote, ok := jsonString(fields["quote"])
+	if !ok {
+		return quotation{}, errors.New("quote must be an exact JSON string")
+	}
+	return quotation{path, quote}, nil
 }
 
 func jsonString(raw json.RawMessage) (string, bool) {

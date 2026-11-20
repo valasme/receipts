@@ -22,7 +22,7 @@ type batchResult struct {
 	Error   string         `json:"error,omitempty"`
 }
 
-func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, repo, file string) int {
+func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, repo, file string, detailed bool) int {
 	data, err := readInput(ctx, stdin, file, maxBatchFile, "batch")
 	if ctx.Err() != nil {
 		fmt.Fprintln(stderr, "Check interrupted.")
@@ -40,21 +40,34 @@ func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 
 	clock, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
-	version := buildVersion()
+	inspection := check.NewInspection(clock, repo, buildVersion())
+	defer inspection.Close()
+	if err := inspection.ValidateSharedRevision(rev); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
 	results := make([]batchResult, 0, len(claims))
 	for _, item := range claims {
 		if ctx.Err() != nil {
 			break
 		}
-		quote, ok := readQuotation(objectFields(item, "path", "quote"))
-		if !ok {
-			results = append(results, batchResult{Error: "invalid claim; expected path and quote"})
-			continue
-		}
-		receipt, err := check.Verify(clock, repo, rev, quote.path, []byte(quote.text), version)
+		fields, err := objectFields(item, "path", "quote")
 		if err != nil {
 			results = append(results, batchResult{Error: err.Error()})
 			continue
+		}
+		quote, err := readQuotation(fields)
+		if err != nil {
+			results = append(results, batchResult{Error: err.Error()})
+			continue
+		}
+		receipt, err := inspection.Verify(rev, quote.path, []byte(quote.text))
+		if err != nil {
+			results = append(results, batchResult{Error: err.Error()})
+			continue
+		}
+		if !detailed {
+			receipt = baseQuotationJSON(receipt)
 		}
 		results = append(results, batchResult{Receipt: &receipt})
 	}
@@ -62,14 +75,17 @@ func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 		fmt.Fprintln(stderr, "Check interrupted.")
 		return 130
 	}
-	return deliverJSON(stdout, stderr, struct {
+	return deliverJSON(ctx, stdout, stderr, struct {
 		Schema  int           `json:"schema_major"`
 		Results []batchResult `json:"results"`
 	}{Schema: 1, Results: results})
 }
 
 func readBatch(data []byte) (string, []json.RawMessage, error) {
-	fields := objectFields(data, "schema_major", "rev", "claims")
+	fields, err := objectFields(data, "schema_major", "rev", "claims")
+	if err != nil {
+		return "", nil, fmt.Errorf("batch file: %w", err)
+	}
 	rev, ok := jsonString(fields["rev"])
 	if string(fields["schema_major"]) != "1" || !ok {
 		return "", nil, errors.New("invalid batch file; expected schema_major 1, rev, and claims")

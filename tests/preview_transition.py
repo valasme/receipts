@@ -1,213 +1,376 @@
-"""Qualify the two public preview versions through installed entry points."""
+"""Qualify fresh installations and public preview upgrades on their native targets."""
 
-import hashlib
+import argparse
 import json
 import os
-import platform
+import re
 import shutil
 import subprocess
 import sys
-import tarfile
-import zipfile
+import tempfile
 from pathlib import Path
 
+from installed_check import invoke, native_target, output, qualify
+from installed_licenses import verify as verify_licenses
 
-TESTS = Path(__file__).resolve().parent
-REPO = "valasme/receipts"
-MODULE = "github.com/valasme/receipts/cmd/receipts"
-TARGET = {"Windows": "windows", "Darwin": "darwin", "Linux": "linux"}[platform.system()]
-ARCH = {"X64": "amd64", "ARM64": "arm64"}[os.environ["RUNNER_ARCH"]]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packaging"))
+from bundle import (
+    HISTORICAL_WITHOUT_NOTICES,
+    NOTICES,
+    RECORD,
+    digest,
+    extract_installers,
+    extract_native,
+    validate_tag,
+    verify_bundle,
+)
+from stage import REPO, GitHub, public
+from toolchain import MODULE, build_info
+
+TARGET, ARCH = native_target()
 EXE = "receipts.exe" if TARGET == "windows" else "receipts"
+CHANNELS = ("archive", "go", "deb", "rpm", "brew", "winget", "scoop")
 
 
-def run(*args, **kwargs):
-    subprocess.run(args, check=True, **kwargs)
-
-
-def output(*args):
-    return subprocess.check_output(args, text=True).strip()
-
-
-def retrieve(tag, dest):
-    run("gh", "release", "download", tag, "--repo", REPO, "--dir", dest)
-    record_path = dest / "build-record.json"
-    manifest = dest / "checksums.txt"
-    record = json.loads(record_path.read_bytes())
-    commit = output("gh", "api", f"repos/{REPO}/commits/{tag}", "--jq", ".sha")
-    assert record["source_tag"] == tag and record["source_commit"] == commit
-    for file in (record_path, manifest):
-        run(
-            "gh", "attestation", "verify", file, "--repo", REPO,
-            "--signer-workflow", f"{REPO}/.github/workflows/release.yml",
-            "--source-digest", record["workflow_commit"],
-        )
-    checksums = {
-        name: digest
-        for digest, name in (line.split() for line in manifest.read_text().splitlines())
-    }
-    assert set(checksums) == {p.name for p in dest.iterdir()} - {"checksums.txt"}
-    for name, digest in checksums.items():
-        assert hashlib.sha256((dest / name).read_bytes()).hexdigest() == digest, name
-    print(f"{tag} source {commit}; verified {len(checksums)} asset hashes.", flush=True)
-    with zipfile.ZipFile(dest / "preview-installers.zip") as archive:
-        archive.extractall(dest / "manifests")
-
-
-def asset(bundle, suffix):
-    (file,) = bundle.glob(f"receipts_*_{TARGET}_{ARCH}.{suffix}")
-    return file
-
-
-def offline_help(binary):
-    if TARGET == "linux":
-        prefix = ["sudo", "unshare", "--net", "--", "runuser", "-u", os.environ["USER"], "--"]
-        if subprocess.run(["unshare", "-Urn", "true"], capture_output=True).returncode == 0:
-            prefix = ["unshare", "-Urn", "--"]
-        help_text = output(*prefix, binary, "--help")
-    elif TARGET == "darwin":
-        help_text = output("sandbox-exec", "-p", "(version 1) (allow default) (deny network*)", binary, "--help")
-    else:
-        help_text = output(
-            "pwsh", "-NoProfile", "-File", TESTS / "offline_help.ps1",
-            str(binary.resolve(strict=True)),
-        )
-    assert "Usage:" in help_text and "receipts" in help_text
-
-
-def qualify(binary, bundle, channel, phase):
-    tag = bundle.name
-    expected = tag if channel == "go" else tag.removeprefix("v")
-    assert output(binary, "--version") == f"receipts {expected}", (channel, phase)
-    if channel == "go":
-        metadata = output("go", "version", "-m", binary)
-        assert f"GOOS={TARGET}" in metadata and f"GOARCH={ARCH}" in metadata
-        assert f"mod\tgithub.com/valasme/receipts\t{tag}\t" in metadata
-    else:
-        if TARGET == "windows":
-            with zipfile.ZipFile(asset(bundle, "zip")) as native:
-                expected_binary = native.read(EXE)
-        else:
-            with tarfile.open(asset(bundle, "tar.gz")) as native:
-                expected_binary = native.extractfile(EXE).read()
-        assert binary.read_bytes() == expected_binary, (channel, phase, "native binary")
-    offline_help(binary)
-    run(sys.executable, TESTS / "golden.py", binary)
-    print(f"PASS {TARGET}/{ARCH} {channel}: {phase}, {expected}; offline help and frozen receipt.", flush=True)
-
-
-def channels(channel, root):
-    installed = root / "installed"
-    if channel == "archive":
-        def install(bundle, phase):
-            if installed.exists():
-                shutil.rmtree(installed)
-            installed.mkdir()
-            if TARGET == "windows":
-                with zipfile.ZipFile(asset(bundle, "zip")) as archive:
-                    archive.extractall(installed)
+def transition_order(previous, current):
+    def precedence(tag):
+        core, sep, suffix = validate_tag(tag)[1:].partition("-")
+        if not sep:
+            raise ValueError("Both transition tags must be prereleases")
+        identifiers = []
+        for value in suffix.split("."):
+            if value.isdigit():
+                if len(value) > 1 and value.startswith("0"):
+                    raise ValueError(f"Invalid numeric prerelease identifier: {tag}")
+                identifiers.append((0, int(value)))
             else:
-                with tarfile.open(asset(bundle, "tar.gz")) as archive:
-                    archive.extractall(installed, filter="data")
-        return installed / EXE, install, lambda: shutil.rmtree(installed)
+                identifiers.append((1, value))
+        return tuple(map(int, core.split("."))), identifiers
 
-    if channel == "go":
-        installed.mkdir()
-        def install(bundle, phase):
-            run("go", "install", f"{MODULE}@{bundle.name}", env=dict(
-                os.environ, GOBIN=str(installed), GOPROXY="direct",
-            ))
-        binary = installed / EXE
-        return binary, install, binary.unlink
+    if precedence(previous) >= precedence(current):
+        raise ValueError("The previous tag must precede the current tag")
 
-    if channel == "deb":
-        binary = Path("/usr/bin/receipts")
-        def install(bundle, phase):
-            run("sudo", "dpkg", "-i", asset(bundle, "deb"))
-        return binary, install, lambda: run("sudo", "dpkg", "--purge", "receipts")
 
-    if channel == "rpm":
-        installed.mkdir()
-        rpm = ["sudo", "rpm", "--root", installed]
-        run(*rpm, "--initdb")
-        def install(bundle, phase):
+def text(*argv, label):
+    return output(*argv, label=label).decode().strip()
+
+
+def installed_go(bundle, source, root, route):
+    installed = root / "bin"
+    installed.mkdir(parents=True, exist_ok=True)
+    environment = dict(
+        os.environ, GOBIN=str(installed), GOMODCACHE=str(root / "modcache"),
+        GOENV="off", GOFLAGS="", GOTOOLCHAIN="local", GOWORK="off",
+    )
+    if route == "candidate":
+        requirement = "./cmd/receipts"
+    else:
+        environment.pop("GOPROXY", None)
+        environment.pop("GOSUMDB", None)
+        environment.pop("GOPRIVATE", None)
+        environment.pop("GONOPROXY", None)
+        environment.pop("GONOSUMDB", None)
+        if route == "direct":
+            environment["GOPROXY"] = "direct"
+        tag = bundle.record["source_tag"]
+        downloaded = invoke(
+            "go", "mod", "download", "-json", f"{MODULE}@{tag}",
+            label=f"Resolve Go module using {route}", timeout=180, cwd=root,
+            env=environment, capture_output=True,
+        )
+        details = json.loads(downloaded.stdout)
+        origin = details.get("Origin") or {}
+        if (
+            details.get("Version") != tag or origin.get("VCS") != "git"
+            or origin.get("URL", "").removesuffix(".git") != f"https://{MODULE}"
+            or origin.get("Hash") != bundle.record["source_commit"]
+            or origin.get("Ref") != f"refs/tags/{tag}"
+            or not details.get("Sum")
+        ):
+            raise ValueError(f"Go module {tag} does not match the pinned source commit")
+        requirement = f"{MODULE}/cmd/receipts@{tag}"
+    invoke("go", "install", requirement, label=f"Go install using {route}",
+           timeout=300, cwd=source if route == "candidate" else root, env=environment)
+    return installed / EXE
+
+
+def qualify_go(binary, bundle, channel):
+    compiler, target, module, settings = build_info(binary)
+    if target != (TARGET, ARCH):
+        raise ValueError(f"{binary}: expected {TARGET}/{ARCH}, observed {target}")
+    if channel == "candidate":
+        if settings.get("vcs.revision") != bundle.record["source_commit"]:
+            raise ValueError("Go candidate install does not match the pinned source commit")
+        version = "dev" if module == "(devel)" else module
+    else:
+        version = bundle.record["source_tag"]
+        if module != version:
+            raise ValueError(f"Go module version is {module}, expected {version}")
+    print(f"Go install ({channel}): {compiler}, {module}, {TARGET}/{ARCH}", flush=True)
+    qualify(binary, version)
+    if bundle.record["source_tag"] != HISTORICAL_WITHOUT_NOTICES:
+        with tempfile.TemporaryDirectory(prefix="receipts-go-notices-") as directory:
+            documents = Path(directory)
+            extract_native(bundle, TARGET, ARCH, documents)
+            verify_licenses(binary, source=documents)
+
+
+def verify_rpm(path):
+    expected = {"amd64": "x86_64", "arm64": "aarch64"}[ARCH]
+    arch = text("rpm", "-qp", "--queryformat", "%{ARCH}", path, label="Read RPM package architecture")
+    if arch != expected:
+        raise ValueError(f"RPM architecture is {arch}, expected {expected}")
+
+
+class Installer:
+    def __init__(self, channel, root):
+        self.channel = channel
+        self.root = root
+        self.alias = None
+        self.license = None
+        self.tap_ready = False
+        if channel == "archive":
+            self.binary = root / "installed" / EXE
+        elif channel == "deb":
+            self.binary = Path("/usr/bin/receipts")
+            self.license = Path("/usr/share/doc/receipts/copyright")
+        elif channel == "rpm":
+            rpm_root = self.root / "rpm"
+            rpm_root.mkdir()
+            self.rpm = ["sudo", "-n", "rpm", "--root", rpm_root]
+            self.rpm_ready = False
+            self.binary = rpm_root / "usr/bin/receipts"
+            self.license = rpm_root / "usr/share/licenses/receipts/LICENSE"
+        elif channel == "brew":
+            self.tap = "valasme/receipts-preview"
+            self.formula = f"{self.tap}/receipts"
+            self.binary = Path(text("brew", "--prefix", label="Read Homebrew prefix")) / "bin/receipts"
+            self.license = self.binary.parent.parent / "opt/receipts/share/receipts/LICENSE"
+        elif channel == "winget":
+            self.winget = os.environ["RECEIPTS_WINGET"]
+            self.winget_flags = ["--scope", "user", "--accept-source-agreements", "--disable-interactivity"]
+            self.binary = Path(os.environ["LOCALAPPDATA"]) / "Microsoft/WinGet/Links/receipts.exe"
+        elif channel == "scoop":
+            self.scoop_dir = Path(os.environ["SCOOP"])
+            self.scoop = ["pwsh", "-NoProfile", "-File", self.scoop_dir / "shims/scoop.ps1"]
+            self.binary = self.scoop_dir / "apps/receipts/current/receipts.exe"
+            self.alias = self.scoop_dir / "shims/receipts.exe"
+            self.license = self.binary.with_name("LICENSE")
+        else:
+            raise ValueError(f"Unknown installer channel: {channel}")
+        self.owned_paths = {self.binary}
+        if self.alias:
+            self.owned_paths.update(
+                self.alias.with_suffix(suffix) for suffix in (".exe", ".shim", ".ps1", ".cmd")
+            )
+        if self.license:
+            self.owned_paths.update({self.license, self.license.with_name(NOTICES)})
+
+    def present(self):
+        if any(path.exists() or path.is_symlink() for path in self.owned_paths):
+            return True
+        if self.channel == "archive":
+            return self.binary.parent.is_dir()
+        if self.channel == "deb":
+            return subprocess.run(
+                ["dpkg-query", "-W", "receipts"], check=False, capture_output=True, timeout=20,
+            ).returncode == 0
+        if self.channel == "rpm" and self.rpm_ready:
+            return subprocess.run(
+                [*self.rpm, "-q", "receipts"], check=False, capture_output=True, timeout=20,
+            ).returncode == 0
+        return False
+
+    def remove(self):
+        if not self.present():
+            return
+        if self.channel == "archive":
+            shutil.rmtree(self.binary.parent)
+        elif self.channel == "deb":
+            invoke("sudo", "-n", "dpkg", "--purge", "receipts", label="Remove Debian package")
+        elif self.channel == "rpm":
+            invoke(*self.rpm, "-e", "receipts", label="Remove RPM")
+        elif self.channel == "brew":
+            invoke("brew", "uninstall", self.formula, label="Remove Homebrew formula", timeout=90)
+        elif self.channel == "winget":
+            invoke(self.winget, "uninstall", "--name", "Receipts Preview", "--exact",
+                   *self.winget_flags, label="Remove WinGet package", timeout=90)
+        elif self.channel == "scoop":
+            invoke(*self.scoop, "uninstall", "receipts", label="Remove Scoop manifest", timeout=90)
+        for path in self.owned_paths:
+            if path.exists() or path.is_symlink():
+                raise ValueError(f"Package-owned path survived uninstall: {path}")
+
+    def close(self):
+        try:
+            self.remove()
+        finally:
+            if self.tap_ready:
+                invoke("brew", "untap", self.tap, label="Remove preview tap", timeout=90)
+            if self.channel == "rpm":
+                invoke("sudo", "-n", "rm", "-rf", "--", self.root / "rpm", label="Remove isolated RPM root")
+
+    def install(self, bundle, phase, candidate=False):
+        ext = "zip" if TARGET == "windows" else "tar.gz"
+        if self.channel == "archive":
+            self.remove()
+            self.binary.parent.mkdir()
+            extract_native(bundle, TARGET, ARCH, self.binary.parent)
+            self.owned_paths.update(self.binary.parent.iterdir())
+        elif self.channel == "deb":
+            invoke("sudo", "-n", "dpkg", "-i", bundle.asset(TARGET, ARCH, "deb"),
+                   label="Install Debian package", timeout=90)
+        elif self.channel == "rpm":
+            package = bundle.asset(TARGET, ARCH, "rpm")
+            verify_rpm(package)
+            if not self.rpm_ready:
+                self.rpm_ready = True
+                invoke(*self.rpm, "--initdb", label="Initialize isolated RPM root")
             options = ["--oldpackage"] if phase == "restore" else []
-            run(*rpm, "--nodeps", "--ignorearch", "-U", *options, asset(bundle, "rpm"))
-        return installed / "usr/bin/receipts", install, lambda: run(*rpm, "-e", "receipts")
+            invoke(*self.rpm, "--nodeps", "--ignorearch", "-U", *options, package,
+                   label="Install RPM", timeout=90)
+        else:
+            self.remove()
+            with tempfile.TemporaryDirectory(dir=self.root) as directory:
+                manifests = Path(directory)
+                extract_installers(bundle, manifests)
+                archive = bundle.asset(TARGET, ARCH, ext)
+                self.install_manifest(bundle, manifests, archive, candidate)
 
-    if channel == "brew":
-        name = "valasme/receipts-preview/receipts"
-        tap = "valasme/receipts-preview"
-        run("brew", "tap-new", "--no-git", tap)
-        formula = Path(output("brew", "--repository", tap)) / "Formula/receipts.rb"
-        formula.parent.mkdir(exist_ok=True)
-        binary = Path(output("brew", "--prefix")) / "bin/receipts"
-        def remove():
-            run("brew", "uninstall", name)
-        def install(bundle, phase):
-            if phase != "install":
-                remove()
-            shutil.copyfile(bundle / "manifests/Formula/receipts.rb", formula)
-            if phase == "install" and subprocess.run(
-                ["brew", "command", "trust"], capture_output=True,
-            ).returncode == 0:
-                run("brew", "trust", "--formula", name)
-            run("brew", "install", "--build-from-source", name)
-        def uninstall():
-            remove()
-            run("brew", "untap", tap)
-        return binary, install, uninstall
+    def install_manifest(self, bundle, manifests, archive, candidate):
+        if self.channel == "brew":
+            new_tap = not self.tap_ready
+            if new_tap:
+                invoke("brew", "tap-new", "--no-git", self.tap, label="Create preview tap")
+                self.tap_ready = True
+            tap_dir = Path(text("brew", "--repository", self.tap, label="Locate preview tap"))
+            formula = tap_dir / "Formula/receipts.rb"
+            formula.parent.mkdir(exist_ok=True)
+            shutil.copyfile(manifests / "Formula/receipts.rb", formula)
+            if new_tap and subprocess.run(["brew", "command", "trust"], check=False, capture_output=True, timeout=20).returncode == 0:
+                invoke("brew", "trust", "--formula", self.formula, label="Trust preview formula")
+            if candidate:
+                cache = Path(text("brew", "--cache", "--build-from-source", self.formula,
+                                  label="Find Homebrew candidate cache"))
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(archive, cache)
+            invoke("brew", "install", "--build-from-source", self.formula,
+                   label="Install Homebrew formula", timeout=180)
+            invoke("brew", "test", self.formula, label="Test Homebrew formula", timeout=90)
+        elif self.channel == "winget":
+            if candidate:
+                cache = Path(tempfile.gettempdir()) / "WinGet" / f"Valasme.Receipts.Preview.{bundle.version}"
+                cache.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(archive, cache / digest(archive).upper())
+            manifest = manifests / "winget"
+            invoke(self.winget, "validate", "--manifest", manifest, label="Validate WinGet manifest")
+            invoke(self.winget, "install", "--manifest", manifest, *self.winget_flags,
+                   "--accept-package-agreements", label="Install WinGet manifest", timeout=180)
+        elif self.channel == "scoop":
+            manifest = manifests / "bucket/receipts.json"
+            if candidate:
+                record = json.loads(manifest.read_bytes())
+                key = {"amd64": "64bit", "arm64": "arm64"}[ARCH]
+                cache_key = re.sub(r"[^\w.\-]+", "_", record["architecture"][key]["url"])
+                cache = self.scoop_dir / "cache"
+                cache.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(archive, cache / f"receipts#{bundle.version}#{cache_key}")
+            invoke(*self.scoop, "install", manifest, label="Install Scoop manifest", timeout=180)
 
-    if channel == "winget":
-        winget = str(Path(os.environ["RECEIPTS_WINGET"]))
-        binary = Path(os.environ["LOCALAPPDATA"]) / "Microsoft/WinGet/Links/receipts.exe"
-        common = ["--scope", "user", "--accept-source-agreements", "--disable-interactivity"]
-        def remove():
-            run(winget, "uninstall", "--name", "Receipts Preview", "--exact", *common)
-        def install(bundle, phase):
-            manifest = bundle / "manifests/winget"
-            run(winget, "validate", "--manifest", manifest)
-            if phase != "install":
-                remove()
-            run(winget, "install", "--manifest", manifest, *common, "--accept-package-agreements")
-        return binary, install, remove
-
-    assert channel == "scoop", channel
-    scoop_dir = Path(os.environ["SCOOP"])
-    scoop = ["pwsh", "-NoProfile", "-File", scoop_dir / "shims/scoop.ps1"]
-    binary = scoop_dir / "apps/receipts/current/receipts.exe"
-    alias = scoop_dir / "shims/receipts.exe"
-
-    def remove():
-        run(*scoop, "uninstall", "receipts")
-        assert not alias.exists()
-
-    def install(bundle, phase):
-        if phase != "install":
-            remove()
-        run(*scoop, "install", bundle / "manifests/bucket/receipts.json")
-        assert alias.is_file()
-
-    return binary, install, remove
+    def qualify(self, bundle):
+        with tempfile.TemporaryDirectory(dir=self.root) as directory:
+            expected = extract_native(bundle, TARGET, ARCH, Path(directory))
+            qualify(self.binary, bundle.version, expected=expected, alias=self.alias)
+            self.owned_paths.add(self.binary.resolve(strict=True))
+            if bundle.record["source_tag"] != HISTORICAL_WITHOUT_NOTICES:
+                verify_licenses(self.binary, source=expected.parent)
+            if self.license:
+                for published, installed in [
+                    ("LICENSE", self.license), (NOTICES, self.license.with_name(NOTICES)),
+                ]:
+                    if bundle.record["source_tag"] == HISTORICAL_WITHOUT_NOTICES:
+                        if installed.is_file():
+                            self.owned_paths.add(installed.resolve(strict=True))
+                        continue
+                    if installed.read_bytes() != expected.with_name(published).read_bytes():
+                        raise ValueError(f"Installed notice differs: {installed}")
+                    self.owned_paths.add(installed.resolve(strict=True))
 
 
-def transition(channel, previous, current):
-    root = Path.cwd() / channel
-    root.mkdir()
-    binary, install, remove = channels(channel, root)
-    assert not binary.exists(), binary
-    for phase, bundle in [("install", previous), ("update", current), ("restore", previous)]:
-        install(bundle, phase)
-        qualify(binary, bundle, channel, phase)
-    remove()
-    assert not binary.exists() and not binary.is_symlink(), binary
-    print(f"PASS {TARGET}/{ARCH} {channel}: removed {previous.name}.", flush=True)
+def exercise(installer, phases, *, candidate=False):
+    if installer.present():
+        raise ValueError(f"Expected a clean {installer.channel} installation")
+    try:
+        for phase, bundle in phases:
+            print(f"{installer.channel}: {phase} {bundle.version}", flush=True)
+            installer.install(bundle, phase, candidate=candidate)
+            installer.qualify(bundle)
+    except BaseException:
+        try:
+            installer.close()
+        except Exception as cleanup:  # noqa: BLE001 - preserve the active failure
+            print(f"Cleanup failed for {installer.channel}: {cleanup}", file=sys.stderr)
+        raise
+    else:
+        installer.close()
+
+
+def load_bundle(root, tag, commit=None):
+    record = json.loads((root / RECORD).read_bytes())
+    return verify_bundle(root, tag=tag, commit=commit or record["source_commit"])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    modes = parser.add_subparsers(dest="mode", required=True)
+    for mode in ("retrieve", "transition"):
+        command = modes.add_parser(mode)
+        if mode == "transition":
+            command.add_argument("channel", choices=CHANNELS)
+        command.add_argument("previous")
+        command.add_argument("current")
+    install = modes.add_parser("install")
+    install.add_argument("channel", choices=CHANNELS)
+    install.add_argument("bundle", type=Path)
+    install.add_argument("--tag", required=True)
+    install.add_argument("--commit", required=True)
+    install.add_argument("--source", type=Path)
+    args = parser.parse_args()
+
+    if args.mode in ("retrieve", "transition"):
+        transition_order(args.previous, args.current)
+        if args.mode == "retrieve":
+            github = GitHub(os.environ.get("GITHUB_REPOSITORY", REPO))
+            for tag in (args.previous, args.current):
+                public(github, tag, Path(tag))
+            return
+        previous, current = [load_bundle(Path(tag).resolve(), tag) for tag in (args.previous, args.current)]
+        phases = [("install", previous), ("update", current), ("restore", previous)]
+        candidate = False
+    else:
+        phases = [("install", load_bundle(args.bundle.resolve(), args.tag, args.commit))]
+        candidate = args.source is not None
+
+    with tempfile.TemporaryDirectory(prefix=f"receipts-{args.channel}-") as directory:
+        root = Path(directory)
+        if args.channel == "go":
+            routes = ["candidate"] if candidate else ["proxy-default", "direct"]
+            for route in routes:
+                for phase, bundle in phases:
+                    # Reuse GOBIN across a transition while keeping routes independent.
+                    go_root = root / route
+                    print(f"go ({route}): {phase} {bundle.version}", flush=True)
+                    binary = installed_go(bundle, args.source if candidate else None, go_root, route)
+                    qualify_go(binary, bundle, route)
+                binary.unlink()
+                if binary.exists():
+                    raise ValueError("Go-installed binary survived removal")
+        else:
+            exercise(Installer(args.channel, root), phases, candidate=candidate)
 
 
 if __name__ == "__main__":
-    command, prev, curr = sys.argv[1:]
-    previous, current = Path(prev).resolve(), Path(curr).resolve()
-    if command == "retrieve":
-        for dest in (previous, current):
-            retrieve(dest.name, dest)
-    else:
-        transition(command, previous, current)
+    try:
+        main()
+    except (ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
+        raise SystemExit(str(error)) from None
