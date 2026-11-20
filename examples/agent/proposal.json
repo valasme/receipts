@@ -1,0 +1,25 @@
+{
+  "claims": [
+    {
+      "path": "guide.txt",
+      "quote": "Export starts offline.\n  Save the receipt locally.\n",
+      "source_lines": [3, 7]
+    },
+    {
+      "path": "guide.txt",
+      "quote": "Export sends receipts automatically.\n",
+      "source_lines": [9, 12]
+    },
+    {
+      "path": "legacy.dat",
+      "quote": "Legacy export enabled.\n",
+      "source_lines": [14, 17]
+    }
+  ],
+  "unresolved": [
+    {
+      "statement": "This change makes export twice as fast.",
+      "source_lines": [19, 19]
+    }
+  ]
+}
