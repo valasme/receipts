@@ -15,7 +15,7 @@ At `5a7f4c5`, all 22 native published-preview transitions passed. The matrix cov
 ## Verification still open
 
 - **Human review.** Run a fresh 12-pair timing trial with an evaluator. Exercise terminal output with interactive assistive technology on the supported systems. [Timing, RCP-025](https://github.com/valasme/receipts/issues/28) · [Accessibility, RCP-036](https://github.com/valasme/receipts/issues/26)
-- **Hosted release.** An owner-authorized candidate must demonstrate staging and promotion concurrency and the automatic postpromotion installer workflow. The source matrix retains every leg. A deliberate hosted failure drill remains open. [Release qualification](https://github.com/valasme/receipts/issues/25) · [Consumer qualification](https://github.com/valasme/receipts/issues/27)
+- **Hosted release.** An owner-authorized candidate must demonstrate staging and promotion concurrency and the automatic postpromotion installer workflow. The hosted failure drill confirmed GitHub retained results from every native source job. [Release qualification](https://github.com/valasme/receipts/issues/25) · [Consumer qualification](https://github.com/valasme/receipts/issues/27)
 - **Parked work.** A file-change or review serialization contract needs a real consumer. The optional pilot remains off after the failed human timing gate. Native signing awaits the owner's v1 decision. [CLI contract](https://github.com/valasme/receipts/issues/26) · [Pilot decision](../verification.md#human-timing-and-pilot-decision) · [Signing decision](../adr/0002-defer-native-signing-until-v1.md)
 
 ## Standards review
@@ -137,7 +137,7 @@ Record audit dispositions and actual evidence in the tracker and planning index 
 | RCP-090 | Check removal of package-owned notices as part of transitions | Verified | The native transition matrix passed removal checks for executables and package-owned notices across all 22 channel and target combinations. |
 | RCP-091 | Bound installed executable checks | Verified | The installed executable helper reports its labeled timeout for a blocked child. |
 | RCP-092 | Enforce the documented workflow lint gate | Verified | The pinned actionlint job rejects invalid workflow syntax. The integrated workflows passed locally. |
-| RCP-093 | Retain failures for all native source targets | Hosted failure drill open | Native jobs use fail-fast false. All matrix results stay visible when GitHub finishes the jobs. |
+| RCP-093 | Retain failures for all native source targets | Verified on GitHub Actions | A disposable branch injected one Ubuntu amd64 failure. The other five native jobs finished successfully and GitHub retained all six results. [Hosted failure drill](https://github.com/valasme/receipts/actions/runs/44830499863) |
 | RCP-094 | Provide one fully pinned consumer verification recipe | Verified against published preview | The documented Linux recipe fetched the published bundle, verified both attestations and 12 asset hashes, checked the installed version and rejected a different tag. |
 | RCP-095 | Give contributors a reproducible CI parity command | Verified | A clean Linux checkout passed the shared minimum-Go source command. The diagnostics guide lists the same tests as CI. |
 | RCP-096 | Warn that review previews include submission text | Verified | The CLI guide identifies submission text in review output and the exposure before sharing. |
