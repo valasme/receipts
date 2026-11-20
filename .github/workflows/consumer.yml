@@ -14,6 +14,10 @@ on:
         required: true
         description: Published release tag
         type: string
+      previous_tag:
+        description: Previous public tag for the upgrade and restore exercise
+        type: string
+        default: ''
       windows_only:
         description: Repeat just the Windows consumers
         type: boolean
@@ -23,6 +27,7 @@ permissions:
   attestations: read
 jobs:
   consumer:
+    if: inputs.previous_tag == ''
     strategy:
       fail-fast: false
       matrix:
@@ -214,3 +219,102 @@ jobs:
             python "$license_test" "$installed"
           fi
           rm "$installed"
+  transition:
+    if: github.event_name == 'workflow_dispatch' && inputs.previous_tag != ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, channel: archive}
+          - {os: ubuntu-24.04-arm, channel: archive}
+          - {os: macos-15, channel: archive}
+          - {os: macos-15-intel, channel: archive}
+          - {os: windows-2025, channel: archive}
+          - {os: windows-11-arm, channel: archive}
+          - {os: ubuntu-24.04, channel: go}
+          - {os: ubuntu-24.04-arm, channel: go}
+          - {os: macos-15, channel: go}
+          - {os: macos-15-intel, channel: go}
+          - {os: windows-2025, channel: go}
+          - {os: windows-11-arm, channel: go}
+          - {os: ubuntu-24.04, channel: deb}
+          - {os: ubuntu-24.04-arm, channel: deb}
+          - {os: ubuntu-24.04, channel: rpm}
+          - {os: ubuntu-24.04-arm, channel: rpm}
+          - {os: macos-15, channel: brew}
+          - {os: macos-15-intel, channel: brew}
+          - {os: windows-2025, channel: winget}
+          - {os: windows-11-arm, channel: winget}
+          - {os: windows-2025, channel: scoop}
+          - {os: windows-11-arm, channel: scoop}
+    env:
+      CURRENT_TAG: ${{ inputs.tag }}
+      PREVIOUS_TAG: ${{ inputs.previous_tag }}
+      CHANNEL: ${{ matrix.channel }}
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Download and authenticate both public previews
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pattern='^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$'
+          [[ "$CURRENT_TAG" =~ $pattern && "$PREVIOUS_TAG" =~ $pattern && "$CURRENT_TAG" != "$PREVIOUS_TAG" ]]
+          cd "$RUNNER_TEMP"
+          python "$GITHUB_WORKSPACE/tests/preview_transition.py" retrieve "$PREVIOUS_TAG" "$CURRENT_TAG"
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        if: matrix.channel == 'go'
+        with:
+          go-version: 1.27.4
+          cache: false
+      - if: matrix.channel == 'rpm'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm
+      - name: Enable local WinGet manifests
+        if: matrix.channel == 'winget'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $winget = Get-Command winget -ErrorAction SilentlyContinue
+          if ($winget) {
+            $path = $winget.Source
+          } else {
+            gh release download v1.29.380 --repo microsoft/winget-cli --dir winget-bootstrap -p DesktopAppInstaller_Dependencies.zip -p Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            Expand-Archive winget-bootstrap/DesktopAppInstaller_Dependencies.zip -DestinationPath winget-bootstrap/deps
+            $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { 'x64' }
+            $deps = @(Get-ChildItem -Recurse winget-bootstrap/deps -Include *.appx,*.msix | Where-Object { $_.FullName -match "[\\/]$arch[\\/]" } | ForEach-Object { $_.FullName })
+            Add-AppxPackage -Path winget-bootstrap/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle -DependencyPath $deps -ForceApplicationShutdown
+            $path = Join-Path (Get-AppxPackage Microsoft.DesktopAppInstaller).InstallLocation 'winget.exe'
+          }
+          & $path settings --enable LocalManifestFiles
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "RECEIPTS_WINGET=$path" >> $env:GITHUB_ENV
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: matrix.channel == 'scoop'
+        with:
+          repository: ScoopInstaller/Install
+          ref: 1e2f334083d609986d8c8bc9e31ae8e87c39fab4
+          path: scoop-bootstrap
+          persist-credentials: false
+      - name: Bootstrap isolated Scoop
+        if: matrix.channel == 'scoop'
+        shell: pwsh
+        run: |
+          $env:SCOOP = Join-Path $env:RUNNER_TEMP 'receipts-scoop'
+          & ./scoop-bootstrap/install.ps1 -ScoopDir $env:SCOOP -RunAsAdmin
+          if (!(Test-Path "$env:SCOOP/shims/scoop.ps1")) { throw 'Scoop installation failed' }
+          "SCOOP=$env:SCOOP" >> $env:GITHUB_ENV
+      - name: Exercise install, upgrade, restore and removal from outside the checkout
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP"
+          python "$GITHUB_WORKSPACE/tests/preview_transition.py" "$CHANNEL" "$PREVIOUS_TAG" "$CURRENT_TAG"
