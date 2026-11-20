@@ -10,6 +10,8 @@
 | [Maintainer and debugging checklist](maintainer-checklist.md) | How to diagnose a broken command, which tools exist and which skills the release still needs to demonstrate |
 | [520-point review inventory](review-inventory.md) | Which individual concerns belong to local alpha, release, pilot or later discovery |
 
+The [implementation verification record](../verification.md) gives the source revision, test outcomes, council decisions and human evidence still needed.
+
 ## Infrastructure pre-alpha
 
 [Readiness review and comparison with the original brief](readiness-review.md) · [GitHub milestone](https://github.com/valasme/receipts/milestone/1)

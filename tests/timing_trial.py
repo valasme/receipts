@@ -3,12 +3,12 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import secrets
 import statistics
 import subprocess
 import tempfile
 import time
+from pathlib import Path
 
 
 def trials():

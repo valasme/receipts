@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
+
 from acceptance import binary, env, git
 
 REV = "37fdc0ff48840283d170b8c2fac06d2e230a76e7"

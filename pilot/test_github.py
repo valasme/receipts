@@ -1,6 +1,7 @@
 import json
 import unittest
-from github import ApiFailure, CONSENT, MARKER, STALE, publish, source
+
+from github import CONSENT, MARKER, STALE, ApiFailure, publish, source
 
 
 class Demo:

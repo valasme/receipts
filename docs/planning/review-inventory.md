@@ -1,6 +1,6 @@
 # Review inventory
 
-520 review questions expressed as checks. Each section names its stage and owning ticket. Use a row to record a test, observation, accepted limit, or reason to defer when working that ticket. All boxes begin open. The release decisions in the spec govern shipment. Conditional discovery is parked until its use case exists. One owner can automate repeatable checks and explicitly mark unavailable native hardware or assistive technology as untested.
+520 review questions expressed as checks. Each section names its stage and owning ticket. Use a row to record a test, observation, accepted limit, or reason to defer when working that ticket. Marked boxes have supporting implementation, measurement or inspection in the [verification record](../verification.md) and the linked tests. Open boxes are unverified or await their stage. The release decisions in the spec govern shipment. Conditional discovery is parked until its use case exists. One owner can automate repeatable checks and explicitly mark unavailable native hardware or assistive technology as untested.
 
 ## Product boundary and solo ownership
 
@@ -31,146 +31,146 @@ Local alpha · T01
 
 Local alpha · T01
 
-- [ ] R021 — Accept an explicit repository directory.
-- [ ] R022 — Resolve an omitted repository against the current directory.
-- [ ] R023 — Resolve the evidence path from the repository root.
-- [ ] R024 — Require a revision for every check.
-- [ ] R025 — Explain the supported commit ID form in help.
-- [ ] R026 — Accept a quote from an explicitly named local file.
-- [ ] R027 — Accept a quote from standard input using a single dash.
-- [ ] R028 — Preserve a final newline supplied through standard input.
-- [ ] R029 — Reject an empty quotation with a corrective diagnostic.
-- [ ] R030 — Reject an unrecognized output format before repository access.
-- [ ] R031 — Report conflicting singleton flag values consistently.
-- [ ] R032 — Reject extra positional arguments.
+- [x] R021 — Accept an explicit repository directory.
+- [x] R022 — Resolve an omitted repository against the current directory.
+- [x] R023 — Resolve the evidence path from the repository root.
+- [x] R024 — Require a revision for every check.
+- [x] R025 — Explain the supported commit ID form in help.
+- [x] R026 — Accept a quote from an explicitly named local file.
+- [x] R027 — Accept a quote from standard input using a single dash.
+- [x] R028 — Preserve a final newline supplied through standard input.
+- [x] R029 — Reject an empty quotation with a corrective diagnostic.
+- [x] R030 — Reject an unrecognized output format before repository access.
+- [x] R031 — Report conflicting singleton flag values consistently.
+- [x] R032 — Reject extra positional arguments.
 - [ ] R033 — Show how to pass an option value beginning with a dash.
 - [ ] R034 — Show how to quote spaces in repository directory names.
-- [ ] R035 — Return help without opening any repository.
-- [ ] R036 — Return version without reading user configuration.
-- [ ] R037 — Complete a noninteractive check without a TTY.
-- [ ] R038 — Fail clearly when a quote file cannot be opened.
-- [ ] R039 — Handle a closed stdin pipe without waiting forever.
+- [x] R035 — Return help without opening any repository.
+- [x] R036 — Return version without reading user configuration.
+- [x] R037 — Complete a noninteractive check without a TTY.
+- [x] R038 — Fail clearly when a quote file cannot be opened.
+- [x] R039 — Handle a closed stdin pipe without waiting forever.
 - [ ] R040 — Show the effective subcommand in usage errors.
 
 ## Revision identity and object storage
 
 Local alpha · T02
 
-- [ ] R041 — Resolve a full commit ID from loose objects.
-- [ ] R042 — Resolve the same commit from packed storage.
-- [ ] R043 — Recognize SHA-1 hexadecimal IDs regardless of letter case.
-- [ ] R044 — Canonicalize accepted IDs to lowercase in receipts.
+- [x] R041 — Resolve a full commit ID from loose objects.
+- [x] R042 — Resolve the same commit from packed storage.
+- [x] R043 — Recognize SHA-1 hexadecimal IDs regardless of letter case.
+- [x] R044 — Canonicalize accepted IDs to lowercase in receipts.
 - [ ] R045 — Identify unsupported object formats before guessing ID length.
-- [ ] R046 — Reject a short unambiguous ID with full-ID guidance.
-- [ ] R047 — Reject a branch name even when it currently points at the requested content.
-- [ ] R048 — Reject a tag object passed as a commit.
-- [ ] R049 — Reject tree and blob IDs in the revision field.
-- [ ] R050 — Read the selected historical commit after HEAD advances.
-- [ ] R051 — Read the same object from a detached checkout.
-- [ ] R052 — Define the supported behavior for bare repositories.
+- [x] R046 — Reject a short unambiguous ID with full-ID guidance.
+- [x] R047 — Reject a branch name even when it currently points at the requested content.
+- [x] R048 — Reject a tag object passed as a commit.
+- [x] R049 — Reject tree and blob IDs in the revision field.
+- [x] R050 — Read the selected historical commit after HEAD advances.
+- [x] R051 — Read the same object from a detached checkout.
+- [x] R052 — Define the supported behavior for bare repositories.
 - [ ] R053 — Read from linked worktrees or return their explicit unsupported reason.
 - [ ] R054 — Keep a missing shallow-clone ancestor unresolved.
-- [ ] R055 — Prevent automatic fetching of promisor objects.
-- [ ] R056 — Exclude replacement references from the object identity calculation.
-- [ ] R057 — Return a corruption reason when object bytes fail integrity checks.
+- [x] R055 — Prevent automatic fetching of promisor objects.
+- [x] R056 — Exclude replacement references from the object identity calculation.
+- [x] R057 — Return a corruption reason when object bytes fail integrity checks.
 - [ ] R058 — Detect a missing pack index without guessing at file absence.
-- [ ] R059 — Bound recursive delta resolution in a packed object.
+- [x] R059 — Bound recursive delta resolution in a packed object.
 - [ ] R060 — Define a constrained policy for alternate object directories.
 
 ## Paths and tree traversal
 
 Local alpha · T02
 
-- [ ] R061 — Compare path components case-sensitively.
-- [ ] R062 — Treat composed and decomposed Unicode paths as distinct.
-- [ ] R063 — Reject leading slash in an evidence path.
-- [ ] R064 — Reject a Windows drive-qualified evidence path.
-- [ ] R065 — Reject backslashes consistently across hosts.
-- [ ] R066 — Reject empty interior components.
-- [ ] R067 — Reject a trailing separator for a claimed source file.
-- [ ] R068 — Reject parent traversal segments.
-- [ ] R069 — Reject current-directory segments.
+- [x] R061 — Compare path components case-sensitively.
+- [x] R062 — Treat composed and decomposed Unicode paths as distinct.
+- [x] R063 — Reject leading slash in an evidence path.
+- [x] R064 — Reject a Windows drive-qualified evidence path.
+- [x] R065 — Reject backslashes consistently across hosts.
+- [x] R066 — Reject empty interior components.
+- [x] R067 — Reject a trailing separator for a claimed source file.
+- [x] R068 — Reject parent traversal segments.
+- [x] R069 — Reject current-directory segments.
 - [ ] R070 — Reject embedded NUL in machine-readable path inputs.
-- [ ] R071 — Reject unsafe direction overrides in a path.
-- [ ] R072 — Allow ordinary spaces within a path component.
-- [ ] R073 — Treat a leading dot in a normal filename literally.
-- [ ] R074 — Distinguish a missing leaf from an unreadable parent.
-- [ ] R075 — Capture the deepest proven tree for an absent entry.
-- [ ] R076 — Distinguish a directory entry from a regular source file.
-- [ ] R077 — Treat a symlink entry as its own unsupported kind.
+- [x] R071 — Reject unsafe direction overrides in a path.
+- [x] R072 — Allow ordinary spaces within a path component.
+- [x] R073 — Treat a leading dot in a normal filename literally.
+- [x] R074 — Distinguish a missing leaf from an unreadable parent.
+- [x] R075 — Capture the deepest proven tree for an absent entry.
+- [x] R076 — Distinguish a directory entry from a regular source file.
+- [x] R077 — Treat a symlink entry as its own unsupported kind.
 - [ ] R078 — Treat a submodule entry as a repository boundary.
 - [ ] R079 — Handle non-UTF-8 tree names without lossy aliasing.
-- [ ] R080 — Detect a non-directory intermediate component and explain the outcome.
+- [x] R080 — Detect a non-directory intermediate component and explain the outcome.
 
 ## Text comparison and line evidence
 
 Local alpha · T02
 
-- [ ] R081 — Match a literal substring in the middle of a line.
-- [ ] R082 — Find a quote spanning multiple source lines.
-- [ ] R083 — Preserve the case of the quotation.
-- [ ] R084 — Preserve tabs in indentation.
-- [ ] R085 — Preserve repeated spaces inside text.
-- [ ] R086 — Distinguish trailing whitespace before a newline.
+- [x] R081 — Match a literal substring in the middle of a line.
+- [x] R082 — Find a quote spanning multiple source lines.
+- [x] R083 — Preserve the case of the quotation.
+- [x] R084 — Preserve tabs in indentation.
+- [x] R085 — Preserve repeated spaces inside text.
+- [x] R086 — Distinguish trailing whitespace before a newline.
 - [ ] R087 — Normalize a CRLF pair split across read buffers.
-- [ ] R088 — Preserve a lone carriage return.
-- [ ] R089 — Treat a UTF-8 BOM as significant content.
-- [ ] R090 — Keep canonically equivalent Unicode sequences byte-distinct.
-- [ ] R091 — Distinguish an ellipsis character from three dots.
-- [ ] R092 — Treat regex punctuation as literal text.
-- [ ] R093 — Find the earliest occurrence of a repeated quote.
+- [x] R088 — Preserve a lone carriage return.
+- [x] R089 — Treat a UTF-8 BOM as significant content.
+- [x] R090 — Keep canonically equivalent Unicode sequences byte-distinct.
+- [x] R091 — Distinguish an ellipsis character from three dots.
+- [x] R092 — Treat regex punctuation as literal text.
+- [x] R093 — Find the earliest occurrence of a repeated quote.
 - [ ] R094 — Handle overlapping matches deterministically.
-- [ ] R095 — Report one-based lines for a match beginning at byte zero.
-- [ ] R096 — Count a final matched LF on its originating line.
-- [ ] R097 — Find a match ending at the last byte of a file.
-- [ ] R098 — Handle a source whose final line has no terminator.
-- [ ] R099 — Distinguish an empty source blob from missing source.
+- [x] R095 — Report one-based lines for a match beginning at byte zero.
+- [x] R096 — Count a final matched LF on its originating line.
+- [x] R097 — Find a match ending at the last byte of a file.
+- [x] R098 — Handle a source whose final line has no terminator.
+- [x] R099 — Distinguish an empty source blob from missing source.
 - [ ] R100 — Explain that a quote-only newline can match any qualifying line ending.
 
 ## Claim logic and limits of inference
 
 Local alpha · T02
 
-- [ ] R101 — Bind one verdict to exactly one scoped proposition.
-- [ ] R102 — Keep the reported problem's validity outside the quote verdict.
-- [ ] R103 — Require complete search coverage before claiming a textual mismatch.
-- [ ] R104 — Record a distinct reason for provable path absence.
-- [ ] R105 — Keep unresolved revision separate from absent path.
+- [x] R101 — Bind one verdict to exactly one scoped proposition.
+- [x] R102 — Keep the reported problem's validity outside the quote verdict.
+- [x] R103 — Require complete search coverage before claiming a textual mismatch.
+- [x] R104 — Record a distinct reason for provable path absence.
+- [x] R105 — Keep unresolved revision separate from absent path.
 - [ ] R106 — Keep an unavailable blob separate from an empty blob.
-- [ ] R107 — Keep denied repository access separate from a textual mismatch.
-- [ ] R108 — Use an explicit unsupported-encoding result for invalid source UTF-8.
-- [ ] R109 — Use an invocation diagnostic for invalid UTF-8 in the quote.
-- [ ] R110 — Recognize binary source through the documented NUL rule.
-- [ ] R111 — Classify a recognized Git LFS pointer as indirect content.
-- [ ] R112 — Avoid following a source redirect into another repository.
-- [ ] R113 — Prevent score or model confidence from assigning a verdict.
-- [ ] R114 — Use can't check when traversal exhausts its budget.
-- [ ] R115 — Ignore changes in the working tree when establishing facts.
-- [ ] R116 — Keep a verified match scoped to the inspected revision.
-- [ ] R117 — Give contradictory evidence its own reason code.
+- [x] R107 — Keep denied repository access separate from a textual mismatch.
+- [x] R108 — Use an explicit unsupported-encoding result for invalid source UTF-8.
+- [x] R109 — Use an invocation diagnostic for invalid UTF-8 in the quote.
+- [x] R110 — Recognize binary source through the documented NUL rule.
+- [x] R111 — Classify a recognized Git LFS pointer as indirect content.
+- [x] R112 — Avoid following a source redirect into another repository.
+- [x] R113 — Prevent score or model confidence from assigning a verdict.
+- [x] R114 — Use can't check when traversal exhausts its budget.
+- [x] R115 — Ignore changes in the working tree when establishing facts.
+- [x] R116 — Keep a verified match scoped to the inspected revision.
+- [x] R117 — Give contradictory evidence its own reason code.
 - [ ] R118 — Record how the checker distinguishes incomplete reads from EOF.
-- [ ] R119 — Explain the differing results for a wrong path and a missing object.
-- [ ] R120 — Keep lack of a reproduced runtime symptom outside the evidence for quote absence.
+- [x] R119 — Explain the differing results for a wrong path and a missing object.
+- [x] R120 — Keep lack of a reproduced runtime symptom outside the evidence for quote absence.
 
 ## Receipt fields and schema evolution
 
 Local alpha · T03
 
-- [ ] R121 — Declare the schema major in every machine receipt.
-- [ ] R122 — Record the checker version independently of the schema.
-- [ ] R123 — Identify the claim kind with a stable enumeration.
-- [ ] R124 — Record the requested revision even when unavailable.
-- [ ] R125 — Record the observed commit only after validation.
-- [ ] R126 — Identify the repository object format for resolved evidence.
-- [ ] R127 — Record the source blob ID for both quote hits and textual misses.
-- [ ] R128 — Record the tree witness for a proven missing component.
-- [ ] R129 — Include a digest of the normalized quote.
-- [ ] R130 — Name the digest algorithm independently of Git's object hash.
-- [ ] R131 — Record the comparison rule version.
-- [ ] R132 — Keep reason codes independent of localized display strings.
-- [ ] R133 — Constrain line endpoints to positive integers.
-- [ ] R134 — Require the end line to be at least the start line.
-- [ ] R135 — Forbid a line range when there is no match.
+- [x] R121 — Declare the schema major in every machine receipt.
+- [x] R122 — Record the checker version independently of the schema.
+- [x] R123 — Identify the claim kind with a stable enumeration.
+- [x] R124 — Record the requested revision even when unavailable.
+- [x] R125 — Record the observed commit only after validation.
+- [x] R126 — Identify the repository object format for resolved evidence.
+- [x] R127 — Record the source blob ID for both quote hits and textual misses.
+- [x] R128 — Record the tree witness for a proven missing component.
+- [x] R129 — Include a digest of the normalized quote.
+- [x] R130 — Name the digest algorithm independently of Git's object hash.
+- [x] R131 — Record the comparison rule version.
+- [x] R132 — Keep reason codes independent of localized display strings.
+- [x] R133 — Constrain line endpoints to positive integers.
+- [x] R134 — Require the end line to be at least the start line.
+- [x] R135 — Forbid a line range when there is no match.
 - [ ] R136 — Omit unavailable evidence rather than inventing sentinel IDs.
 - [ ] R137 — Define how a consumer handles new optional fields.
 - [ ] R138 — Reject an unsupported major in the publication adapter.
@@ -181,100 +181,100 @@ Local alpha · T03
 
 Local alpha · T03
 
-- [ ] R141 — Lead each receipt with the verdict and claim kind.
-- [ ] R142 — Place the file path adjacent to the matching line range.
-- [ ] R143 — Display the complete commit in copyable form.
-- [ ] R144 — Place the reason immediately after the evidence.
+- [x] R141 — Lead each receipt with the verdict and claim kind.
+- [x] R142 — Place the file path adjacent to the matching line range.
+- [x] R143 — Display the complete commit in copyable form.
+- [x] R144 — Place the reason immediately after the evidence.
 - [ ] R145 — Use one next action for a recoverable failure.
 - [ ] R146 — Expose a usable manual inspection route without a forge.
-- [ ] R147 — Keep the successful common case to a short terminal block.
-- [ ] R148 — Avoid duplicating the same claim in a summary and body.
-- [ ] R149 — Use a consistent line order across verdicts.
+- [x] R147 — Keep the successful common case to a short terminal block.
+- [x] R148 — Avoid duplicating the same claim in a summary and body.
+- [x] R149 — Use a consistent line order across verdicts.
 - [ ] R150 — Differentiate missing evidence from missing input in the headline.
 - [ ] R151 — Explain which normalization rule affects a mismatch.
-- [ ] R152 — Identify the earliest match when several copies exist.
-- [ ] R153 — Keep prompts and decoration out of piped output.
-- [ ] R154 — Use neutral language when addressing a first-time contributor.
+- [x] R152 — Identify the earliest match when several copies exist.
+- [x] R153 — Keep prompts and decoration out of piped output.
+- [x] R154 — Use neutral language when addressing a first-time contributor.
 - [ ] R155 — Make the human-readable summary intelligible when pasted into email.
 - [ ] R156 — Use a meaningful Markdown link label for source inspection.
 - [ ] R157 — Render long paths without cutting off their identifying suffix.
 - [ ] R158 — Keep text selection independent of any drawn border.
-- [ ] R159 — Separate tool failures visually from claim findings.
+- [x] R159 — Separate tool failures visually from claim findings.
 - [ ] R160 — Show the effect of correcting a citation in the onboarding example.
 
 ## Accessibility and inclusive interaction
 
 Local alpha · T03
 
-- [ ] R161 — Announce verdicts with words even when color is disabled.
+- [x] R161 — Announce verdicts with words even when color is disabled.
 - [ ] R162 — Use meaningful reading order with a screen reader.
 - [ ] R163 — Provide an ASCII-readable alternative to decorative separators.
-- [ ] R164 — Keep the terminal interaction fully operable by keyboard.
-- [ ] R165 — Test help navigation at 40 columns.
+- [x] R164 — Keep the terminal interaction fully operable by keyboard.
+- [x] R165 — Test help navigation at 40 columns.
 - [ ] R166 — Keep the output usable at 200 percent magnification in a rendered comment.
 - [ ] R167 — Test reflow of the Markdown receipt at narrow mobile width.
 - [ ] R168 — Give each evidence link a distinct spoken purpose.
-- [ ] R169 — Avoid Markdown tables for layout in the receipt.
-- [ ] R170 — Read a multiline example using VoiceOver or document the test gap.
-- [ ] R171 — Read a Windows example using Narrator or document the test gap.
-- [ ] R172 — Read a Linux terminal example with a nonvisual reader or record the gap.
-- [ ] R173 — Honor user terminal colors by using plain default styles.
+- [x] R169 — Avoid Markdown tables for layout in the receipt.
+- [x] R170 — Read a multiline example using VoiceOver or document the test gap.
+- [x] R171 — Read a Windows example using Narrator or document the test gap.
+- [x] R172 — Read a Linux terminal example with a nonvisual reader or record the gap.
+- [x] R173 — Honor user terminal colors by using plain default styles.
 - [ ] R174 — Ensure a provider's light theme does not hide explanatory text.
 - [ ] R175 — Inspect the same comment in forced-colors mode.
-- [ ] R176 — Allow copying commands without copying the shell prompt.
-- [ ] R177 — Avoid spinner-only progress feedback.
-- [ ] R178 — Keep transient feedback available in final output.
+- [x] R176 — Allow copying commands without copying the shell prompt.
+- [x] R177 — Avoid spinner-only progress feedback.
+- [x] R178 — Keep transient feedback available in final output.
 - [ ] R179 — Pair each jargon term with a plain-language explanation in help.
-- [ ] R180 — Write down what automated accessibility checks cannot establish.
+- [x] R180 — Write down what automated accessibility checks cannot establish.
 
 ## Error behavior and recovery
 
 Local alpha · T04
 
-- [ ] R181 — Assign a usage exit for missing required inputs.
+- [x] R181 — Assign a usage exit for missing required inputs.
 - [ ] R182 — Assign an operational exit for an internal invariant failure.
-- [ ] R183 — Return a completed receipt for a supported inconclusive check.
-- [ ] R184 — Keep a contradicted receipt consumable under a successful process exit.
-- [ ] R185 — Reserve stdout for the requested result.
-- [ ] R186 — Route diagnostics to stderr.
+- [x] R183 — Return a completed receipt for a supported inconclusive check.
+- [x] R184 — Keep a contradicted receipt consumable under a successful process exit.
+- [x] R185 — Reserve stdout for the requested result.
+- [x] R186 — Route diagnostics to stderr.
 - [ ] R187 — Explain a nonexistent repository directory.
 - [ ] R188 — Explain a directory that is present but lacks Git metadata.
 - [ ] R189 — Distinguish a read-only repository from one lacking read permission.
 - [ ] R190 — Describe how to obtain a missing revision through the user's normal workflow.
 - [ ] R191 — Offer a next action for an unsupported storage type.
-- [ ] R192 — Explain an input ceiling in the unit the user supplied.
-- [ ] R193 — Handle a full output device as failed delivery.
+- [x] R192 — Explain an input ceiling in the unit the user supplied.
+- [x] R193 — Handle a full output device as failed delivery.
 - [ ] R194 — Handle a broken stdout pipe without claiming delivery succeeded.
 - [ ] R195 — Discard incomplete JSON after a short write.
-- [ ] R196 — Give a clear interruption outcome when the user cancels.
-- [ ] R197 — Distinguish cancellation from a configured deadline.
-- [ ] R198 — Make rerunning a failed local invocation safe.
+- [x] R196 — Give a clear interruption outcome when the user cancels.
+- [x] R197 — Distinguish cancellation from a configured deadline.
+- [x] R198 — Make rerunning a failed local invocation safe.
 - [ ] R199 — Include a stable diagnostic identifier for support requests.
-- [ ] R200 — Keep stack traces and raw library internals out of normal diagnostics.
+- [x] R200 — Keep stack traces and raw library internals out of normal diagnostics.
 
 ## Privacy and data handling
 
 Local alpha · T04
 
-- [ ] R201 — Run a successful local check with network access denied.
-- [ ] R202 — Run the failure path with network access denied.
-- [ ] R203 — Avoid including the local account name in a receipt.
-- [ ] R204 — Exclude the absolute checkout directory from shared evidence.
-- [ ] R205 — Exclude the absolute quote filename from shared evidence.
-- [ ] R206 — Omit raw quote contents in default output.
-- [ ] R207 — Omit source excerpts from default diagnostics.
-- [ ] R208 — Document that a quote hash can reveal a guessable quote.
-- [ ] R209 — Document that private path names themselves may be sensitive.
-- [ ] R210 — Keep author name and email out of object provenance.
+- [x] R201 — Run a successful local check with network access denied.
+- [x] R202 — Run the failure path with network access denied.
+- [x] R203 — Avoid including the local account name in a receipt.
+- [x] R204 — Exclude the absolute checkout directory from shared evidence.
+- [x] R205 — Exclude the absolute quote filename from shared evidence.
+- [x] R206 — Omit raw quote contents in default output.
+- [x] R207 — Omit source excerpts from default diagnostics.
+- [x] R208 — Document that a quote hash can reveal a guessable quote.
+- [x] R209 — Document that private path names themselves may be sensitive.
+- [x] R210 — Keep author name and email out of object provenance.
 - [ ] R211 — Avoid creating a persistent history of local checks.
 - [ ] R212 — Avoid sending automatic crash reports.
 - [ ] R213 — Avoid retaining per-user activity identifiers.
 - [ ] R214 — Inspect temporary workspace cleanup after normal completion.
 - [ ] R215 — Check temporary files after interruption if a worker uses disk.
 - [ ] R216 — Document stdout redirection as a user-controlled export.
-- [ ] R217 — Ensure a private clone never infers a public evidence destination.
-- [ ] R218 — Provide an offline troubleshooting procedure.
-- [ ] R219 — Use synthetic paths and snippets in public bug examples.
+- [x] R217 — Ensure a private clone never infers a public evidence destination.
+- [x] R218 — Provide an offline troubleshooting procedure.
+- [x] R219 — Use synthetic paths and snippets in public bug examples.
 - [ ] R220 — Describe deletion of an already-shared receipt as best-effort across copies.
 
 ## Defensive boundaries and resource control
@@ -282,24 +282,24 @@ Local alpha · T04
 Local alpha · T04
 
 - [ ] R221 — Read report prose strictly as untrusted data.
-- [ ] R222 — Keep repository-supplied hooks outside the check path.
-- [ ] R223 — Ignore repository-supplied clean and smudge filters.
-- [ ] R224 — Prevent a repository from selecting the checker executable.
-- [ ] R225 — Keep shell command construction out of object lookup.
-- [ ] R226 — Do not interpret markup found in filenames as renderer instructions.
-- [ ] R227 — Keep terminal escape sequences inert in diagnostics.
-- [ ] R228 — Bound quote input before allocating its full contents.
-- [ ] R229 — Enforce the blob limit on uncompressed size.
-- [ ] R230 — Bound cumulative bytes across tree reads.
-- [ ] R231 — Bound path-component count before traversing the tree.
-- [ ] R232 — Bound memory used by pack index parsing.
+- [x] R222 — Keep repository-supplied hooks outside the check path.
+- [x] R223 — Ignore repository-supplied clean and smudge filters.
+- [x] R224 — Prevent a repository from selecting the checker executable.
+- [x] R225 — Keep shell command construction out of object lookup.
+- [x] R226 — Do not interpret markup found in filenames as renderer instructions.
+- [x] R227 — Keep terminal escape sequences inert in diagnostics.
+- [x] R228 — Bound quote input before allocating its full contents.
+- [x] R229 — Enforce the blob limit on uncompressed size.
+- [x] R230 — Bound cumulative bytes across tree reads.
+- [x] R231 — Bound path-component count before traversing the tree.
+- [x] R232 — Bound memory used by pack index parsing.
 - [ ] R233 — Limit total time across all object operations.
-- [ ] R234 — Stop decompression when its output exceeds policy.
+- [x] R234 — Stop decompression when its output exceeds policy.
 - [ ] R235 — Ensure cancellations reach all child work.
 - [ ] R236 — Verify fetched dependency provenance before adopting a reader library.
 - [ ] R237 — Inventory environment variables that can influence repository resolution.
 - [ ] R238 — Require explicit user selection for any path outside the repository's storage domain.
-- [ ] R239 — Treat a malformed tree with duplicate names as inconclusive.
+- [x] R239 — Treat a malformed tree with duplicate names as inconclusive.
 - [ ] R240 — Record the integrity boundary assumed for local object storage.
 
 ## Performance and scale
@@ -307,22 +307,22 @@ Local alpha · T04
 Local alpha · T04
 
 - [ ] R241 — Measure cold startup on the reference machine.
-- [ ] R242 — Measure check latency with a warm object cache.
-- [ ] R243 — Measure peak memory for a maximum-size valid blob.
-- [ ] R244 — Measure latency for the largest permitted quote.
-- [ ] R245 — Benchmark a quote that nearly matches many positions.
+- [x] R242 — Measure check latency with a warm object cache.
+- [x] R243 — Measure peak memory for a maximum-size valid blob.
+- [x] R244 — Measure latency for the largest permitted quote.
+- [x] R245 — Benchmark a quote that nearly matches many positions.
 - [ ] R246 — Benchmark a hit located at the beginning of a large blob.
 - [ ] R247 — Benchmark a hit located at the end of a large blob.
-- [ ] R248 — Benchmark a conclusive miss over the full permitted blob.
+- [x] R248 — Benchmark a conclusive miss over the full permitted blob.
 - [ ] R249 — Measure path traversal in a broad root tree.
 - [ ] R250 — Measure traversal at the permitted nesting limit.
 - [ ] R251 — Measure packed history access independently of total commit count.
 - [ ] R252 — Record CPU time alongside wall clock to expose I/O waits.
-- [ ] R253 — Measure repeated invocations without a resident service.
+- [x] R253 — Measure repeated invocations without a resident service.
 - [ ] R254 — Track binary size for each distributed platform.
 - [ ] R255 — Measure overhead of machine-readable rendering.
 - [ ] R256 — Compare performance across native architecture classes when available.
-- [ ] R257 — Report timing dispersion over repeated runs.
+- [x] R257 — Report timing dispersion over repeated runs.
 - [ ] R258 — Separate watchdog overhead from actual matching cost.
 - [ ] R259 — Record disk medium and Go version with the reference numbers.
 - [ ] R260 — Define a regression threshold from baseline variability before enforcing it.
@@ -331,15 +331,15 @@ Local alpha · T04
 
 Local alpha · T05
 
-- [ ] R261 — Run native Linux amd64 smoke checks.
-- [ ] R262 — Exercise Linux arm64 natively or mark that target preview.
-- [ ] R263 — Run native Apple Silicon smoke checks.
-- [ ] R264 — Exercise Intel macOS natively or mark that target preview.
-- [ ] R265 — Run native Windows amd64 smoke checks.
-- [ ] R266 — Exercise Windows arm64 natively or mark that target preview.
-- [ ] R267 — Compare normalized receipts across the three operating systems.
+- [x] R261 — Run native Linux amd64 smoke checks.
+- [x] R262 — Exercise Linux arm64 natively or mark that target preview.
+- [x] R263 — Run native Apple Silicon smoke checks.
+- [x] R264 — Exercise Intel macOS natively or mark that target preview.
+- [x] R265 — Run native Windows amd64 smoke checks.
+- [x] R266 — Exercise Windows arm64 natively or mark that target preview.
+- [x] R267 — Compare normalized receipts across the three operating systems.
 - [ ] R268 — Read committed LF bytes from a CRLF-configured Windows checkout.
-- [ ] R269 — Check a case-only path difference on a case-insensitive host.
+- [x] R269 — Check a case-only path difference on a case-insensitive host.
 - [ ] R270 — Pass a Windows repository path with a drive and spaces.
 - [ ] R271 — Keep slash-based evidence paths usable from PowerShell.
 - [ ] R272 — Document how text pipelines can change quote bytes on Windows.
@@ -348,7 +348,7 @@ Local alpha · T05
 - [ ] R275 — Inspect Ctrl-C handling on Windows.
 - [ ] R276 — Inspect SIGINT handling on Unix.
 - [ ] R277 — Verify archive executable permissions after extraction on Unix.
-- [ ] R278 — Verify the Windows archive contains a usable executable suffix.
+- [x] R278 — Verify the Windows archive contains a usable executable suffix.
 - [ ] R279 — Check long repository-directory paths under documented platform limits.
 - [ ] R280 — Distinguish binary target architecture from the architecture used by emulation.
 
@@ -356,22 +356,22 @@ Local alpha · T05
 
 Local alpha · T05
 
-- [ ] R281 — Build fixtures from portable repository descriptions.
-- [ ] R282 — Use the actual CLI process for golden receipt tests.
-- [ ] R283 — Check stderr separately from stdout in integration tests.
-- [ ] R284 — Capture process exit status for every fixture family.
-- [ ] R285 — Prove dirty working files leave a receipt unchanged.
-- [ ] R286 — Prove staging different content leaves the receipt unchanged.
-- [ ] R287 — Keep golden comparisons free of timestamps.
-- [ ] R288 — Validate generated JSON against its declared schema.
-- [ ] R289 — Compare visible Markdown evidence with the JSON equivalent.
-- [ ] R290 — Round-trip escaped Unicode evidence through a JSON reader.
-- [ ] R291 — Exercise truncation during object lookup using controlled fixtures.
-- [ ] R292 — Test resource ceilings at exactly the limit and one byte over.
-- [ ] R293 — Check comparison invariance when LF becomes CRLF on both sides.
+- [x] R281 — Build fixtures from portable repository descriptions.
+- [x] R282 — Use the actual CLI process for golden receipt tests.
+- [x] R283 — Check stderr separately from stdout in integration tests.
+- [x] R284 — Capture process exit status for every fixture family.
+- [x] R285 — Prove dirty working files leave a receipt unchanged.
+- [x] R286 — Prove staging different content leaves the receipt unchanged.
+- [x] R287 — Keep golden comparisons free of timestamps.
+- [x] R288 — Validate generated JSON against its declared schema.
+- [x] R289 — Compare visible Markdown evidence with the JSON equivalent.
+- [x] R290 — Round-trip escaped Unicode evidence through a JSON reader.
+- [x] R291 — Exercise truncation during object lookup using controlled fixtures.
+- [x] R292 — Test resource ceilings at exactly the limit and one byte over.
+- [x] R293 — Check comparison invariance when LF becomes CRLF on both sides.
 - [ ] R294 — Check monotonicity of first-match offsets when appending content.
-- [ ] R295 — Exercise malformed input with a bounded property-test corpus.
-- [ ] R296 — Run validation with Go's race detector where supported.
+- [x] R295 — Exercise malformed input with a bounded property-test corpus.
+- [x] R296 — Run validation with Go's race detector where supported.
 - [ ] R297 — Confirm deterministic iteration ordering across repeated runs.
 - [ ] R298 — Re-run isolated cases in random order to reveal fixture leakage.
 - [ ] R299 — Store the fixture revision and generating tool versions with results.
@@ -381,24 +381,24 @@ Local alpha · T05
 
 Local alpha · T06
 
-- [ ] R301 — Define each corpus label as a claim-level verdict.
+- [x] R301 — Define each corpus label as a claim-level verdict.
 - [ ] R302 — Record the independent ground-truth method for each case.
 - [ ] R303 — Include a true citation from an otherwise flawed report.
 - [ ] R304 — Include an erroneous citation from an otherwise legitimate report.
-- [ ] R305 — Include inconclusive cases with valid underlying code.
-- [ ] R306 — Balance expected verdict strata in the initial set.
-- [ ] R307 — Split whole repository families together.
+- [x] R305 — Include inconclusive cases with valid underlying code.
+- [x] R306 — Balance expected verdict strata in the initial set.
+- [x] R307 — Split whole repository families together.
 - [ ] R308 — Keep paraphrased copies of a quote on one side of the split.
-- [ ] R309 — Freeze holdout identifiers before changing checker rules.
-- [ ] R310 — Record whether benchmark text can be redistributed.
-- [ ] R311 — Measure false contradictions against eligible ground truth.
-- [ ] R312 — Measure false verifications separately.
-- [ ] R313 — Count unsupported cases in the full denominator.
-- [ ] R314 — Report decisive coverage alongside accuracy.
-- [ ] R315 — Publish the confusion matrix including can't check.
-- [ ] R316 — Report uncertainty for observed zero-error estimates.
+- [x] R309 — Freeze holdout identifiers before changing checker rules.
+- [x] R310 — Record whether benchmark text can be redistributed.
+- [x] R311 — Measure false contradictions against eligible ground truth.
+- [x] R312 — Measure false verifications separately.
+- [x] R313 — Count unsupported cases in the full denominator.
+- [x] R314 — Report decisive coverage alongside accuracy.
+- [x] R315 — Publish the confusion matrix including can't check.
+- [x] R316 — Report uncertainty for observed zero-error estimates.
 - [ ] R317 — Include manual quote preparation time in both comparisons.
-- [ ] R318 — Counterbalance task order for the solo timing exercise.
+- [x] R318 — Counterbalance task order for the solo timing exercise.
 - [ ] R319 — Record which timing tasks the evaluator has previously seen.
 - [ ] R320 — Set a minimum improvement before allocating time to GitHub automation.
 
@@ -406,18 +406,18 @@ Local alpha · T06
 
 Local release · T07
 
-- [ ] R321 — Document the minimum supported Go toolchain.
-- [ ] R322 — Pin actions to reviewed immutable commits.
+- [x] R321 — Document the minimum supported Go toolchain.
+- [x] R322 — Pin actions to reviewed immutable commits.
 - [ ] R323 — Record the upstream version associated with each pinned action.
-- [ ] R324 — Separate read-only tests from release credentials.
-- [ ] R325 — Disable persisted checkout credentials where unnecessary.
+- [x] R324 — Separate read-only tests from release credentials.
+- [x] R325 — Disable persisted checkout credentials where unnecessary.
 - [ ] R326 — Exercise PR jobs with a read-only token.
-- [ ] R327 — Test ordinary pushes independently from tagged releases.
+- [x] R327 — Test ordinary pushes independently from tagged releases.
 - [ ] R328 — Keep privileged jobs on trusted workflow definitions.
-- [ ] R329 — Distinguish a native OS test from cross-compilation in CI output.
-- [ ] R330 — Keep fixtures self-contained when dependency fetching is disabled.
-- [ ] R331 — Name CI jobs so a failing platform is visible immediately.
-- [ ] R332 — Set finite timeouts on release and test jobs.
+- [x] R329 — Distinguish a native OS test from cross-compilation in CI output.
+- [x] R330 — Keep fixtures self-contained when dependency fetching is disabled.
+- [x] R331 — Name CI jobs so a failing platform is visible immediately.
+- [x] R332 — Set finite timeouts on release and test jobs.
 - [ ] R333 — Cancel redundant old validation jobs on new revisions.
 - [ ] R334 — Avoid canceling a half-published release as ordinary CI churn.
 - [ ] R335 — Retain small diagnostics long enough to inspect a failed run.
@@ -425,7 +425,7 @@ Local release · T07
 - [ ] R337 — Keep CI logs free from raw submission text.
 - [ ] R338 — Add a dependency update rehearsal to the maintenance cadence.
 - [ ] R339 — Record how a solo owner reruns one failed platform job.
-- [ ] R340 — Document which checks must pass for the exact release commit.
+- [x] R340 — Document which checks must pass for the exact release commit.
 
 ## Packaging and installation
 
@@ -437,31 +437,31 @@ Local release · T07
 - [ ] R344 — Provide a user-local install path on macOS.
 - [ ] R345 — Provide a user-local install path on Windows.
 - [ ] R346 — Document PATH changes separately for common shells.
-- [ ] R347 — Show how to verify the installed version.
-- [ ] R348 — Include the license text with every archive.
-- [ ] R349 — Generate an artifact manifest from the actual release outputs.
+- [x] R347 — Show how to verify the installed version.
+- [x] R348 — Include the license text with every archive.
+- [x] R349 — Generate an artifact manifest from the actual release outputs.
 - [ ] R350 — Check each archive against the published checksum.
 - [ ] R351 — Explain what a checksum establishes about corruption.
-- [ ] R352 — Provide an independent authenticity verification route or declare its absence.
-- [ ] R353 — State signing and notarization status for macOS downloads.
-- [ ] R354 — State code-signing status for Windows downloads.
-- [ ] R355 — Avoid onboarding instructions that weaken OS protections.
+- [x] R352 — Provide an independent authenticity verification route or declare its absence.
+- [x] R353 — State signing and notarization status for macOS downloads.
+- [x] R354 — State code-signing status for Windows downloads.
+- [x] R355 — Avoid onboarding instructions that weaken OS protections.
 - [ ] R356 — Exercise installation into a clean temporary environment.
 - [ ] R357 — Exercise removal without deleting a user's repositories.
 - [ ] R358 — Exercise upgrading from the oldest supported preview.
-- [ ] R359 — Document a reversible way to select a known-good binary.
+- [x] R359 — Document a reversible way to select a known-good binary.
 - [ ] R360 — Gate each future package-manager channel on a named maintenance budget.
 
 ## Release management and recovery
 
 Local release · T07
 
-- [ ] R361 — Allocate one version to one source revision.
-- [ ] R362 — Set a clear pre-release marker for experimental distributions.
+- [x] R361 — Allocate one version to one source revision.
+- [x] R362 — Set a clear pre-release marker for experimental distributions.
 - [ ] R363 — Write release notes that identify verdict-rule changes.
-- [ ] R364 — Publish known unsupported repository formats.
-- [ ] R365 — List which platform combinations were actually exercised.
-- [ ] R366 — Run the packaging rehearsal before creating a public tag.
+- [x] R364 — Publish known unsupported repository formats.
+- [x] R365 — List which platform combinations were actually exercised.
+- [x] R366 — Run the packaging rehearsal before creating a public tag.
 - [ ] R367 — Verify that the release manifest has one entry per intended target.
 - [ ] R368 — Test downloaded artifacts from a staged or draft distribution.
 - [ ] R369 — Describe recovery from a failed upload before publication.
@@ -481,25 +481,25 @@ Local release · T07
 
 Local release · T07
 
-- [ ] R381 — Give a newcomer one copyable successful local example.
+- [x] R381 — Give a newcomer one copyable successful local example.
 - [ ] R382 — Give a newcomer one deliberately contradicted example.
 - [ ] R383 — Give a newcomer one example requiring additional evidence.
-- [ ] R384 — Show how to obtain a full commit ID using familiar Git commands.
+- [x] R384 — Show how to obtain a full commit ID using familiar Git commands.
 - [ ] R385 — Explain why quotes copied from rendered web pages can differ.
-- [ ] R386 — Explain how to include or omit a final newline deliberately.
+- [x] R386 — Explain how to include or omit a final newline deliberately.
 - [ ] R387 — Provide an annotated receipt with every evidence field identified.
 - [ ] R388 — Publish the policy for interpreting unknown result codes.
 - [ ] R389 — Describe independent manual verification using a pinned revision.
-- [ ] R390 — Document the boundary between reporting a bug and disclosing private material.
+- [x] R390 — Document the boundary between reporting a bug and disclosing private material.
 - [ ] R391 — Give issue reporters a redacted minimal reproduction template.
 - [ ] R392 — Show how to reduce a case to a synthetic repository.
-- [ ] R393 — Route contact about sensitive Receipts bugs to a private project channel.
-- [ ] R394 — State that public support is best effort for a solo project.
+- [x] R393 — Route contact about sensitive Receipts bugs to a private project channel.
+- [x] R394 — State that public support is best effort for a solo project.
 - [ ] R395 — Describe the process for proposing a new check kind.
-- [ ] R396 — Define the contribution evidence expected for a verdict change.
+- [x] R396 — Define the contribution evidence expected for a verdict change.
 - [ ] R397 — Record how a disputed fixture label gets reconsidered.
 - [ ] R398 — Explain how old examples stay paired with their schema versions.
-- [ ] R399 — Make license and third-party notices discoverable from the project home.
+- [x] R399 — Make license and third-party notices discoverable from the project home.
 - [ ] R400 — Describe a maintenance-mode path if the owner steps away.
 
 ## Forge intake and read-only preview

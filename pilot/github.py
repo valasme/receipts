@@ -3,10 +3,10 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 from urllib.parse import quote
 
 MARKER = "<!-- receipts:public-demo:v1 -->"
@@ -32,7 +32,9 @@ class GitHub:
             args += ["--input", "-"]
             data = json.dumps(payload).encode()
         try:
-            result = subprocess.run(args, input=data, capture_output=True, timeout=20)
+            result = subprocess.run(
+                args, check=False, input=data, capture_output=True, timeout=20
+            )
         except (OSError, subprocess.TimeoutExpired) as err:
             raise ApiFailure("GitHub API unavailable") from err
         if result.returncode:
@@ -112,6 +114,7 @@ def render(claim, executable):
                 "--format",
                 "markdown",
             ],
+            check=False,
             input=text,
             capture_output=True,
             timeout=8,

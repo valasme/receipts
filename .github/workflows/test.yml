@@ -33,6 +33,7 @@ jobs:
       - run: python tests/acceptance.py ./receipts-test.exe
       - run: python tests/storage.py ./receipts-test.exe
       - run: python tests/golden.py ./receipts-test.exe
+      - run: python tests/edge_cases.py ./receipts-test.exe
       - run: python tests/evaluate.py ./receipts-test.exe
       - run: go run ./cmd/receipts --version
   diagnostics:

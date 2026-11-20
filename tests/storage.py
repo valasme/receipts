@@ -1,8 +1,9 @@
 """Additional black-box storage and budget tests; requires working Git."""
 
-from pathlib import Path
 import tempfile
 import zlib
+from pathlib import Path
+
 from acceptance import check, git
 
 

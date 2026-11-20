@@ -103,7 +103,7 @@ jobs:
           & $scoop uninstall receipts
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
-          go-version-file: go.mod
+          go-version: 1.27.4
           cache: false
       - name: Install the tagged public Go module
         shell: bash

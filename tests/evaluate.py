@@ -5,7 +5,8 @@ import subprocess
 import tempfile
 from collections import Counter
 from pathlib import Path
-from acceptance import check, git, env
+
+from acceptance import check, env, git
 
 
 def evaluate():

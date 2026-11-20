@@ -3,10 +3,10 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 binary = Path(sys.argv[1]).resolve()
 env = dict(
@@ -56,6 +56,7 @@ def check(repo, rev, path, quote, fmt="json", expected=0):
             "--format",
             fmt,
         ],
+        check=False,
         input=quote,
         capture_output=True,
     )

@@ -2,13 +2,13 @@
 
 import hashlib
 import os
-from pathlib import Path
 import platform
 import subprocess
 import sys
 import tarfile
 import tempfile
 import zipfile
+from pathlib import Path
 
 
 def smoke(bundle):
