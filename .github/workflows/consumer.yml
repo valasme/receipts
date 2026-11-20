@@ -87,7 +87,7 @@ jobs:
             Expand-Archive winget-bootstrap/DesktopAppInstaller_Dependencies.zip -DestinationPath winget-bootstrap/deps
             $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { 'x64' }
             $deps = @(Get-ChildItem -Recurse winget-bootstrap/deps -Include *.appx,*.msix | Where-Object { $_.FullName -match "[\\/]$arch[\\/]" } | ForEach-Object { $_.FullName })
-            Add-AppxPackage -Path winget-bootstrap/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle -DependencyPath $deps
+            Add-AppxPackage -Path winget-bootstrap/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle -DependencyPath $deps -ForceApplicationShutdown
             $installer = Get-AppxPackage Microsoft.DesktopAppInstaller
             $env:PATH = "$($installer.InstallLocation);$env:PATH"
           }
@@ -97,29 +97,39 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe" --version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          winget uninstall --id Valasme.Receipts.Preview --exact --accept-source-agreements --disable-interactivity
+          winget uninstall --name "Receipts Preview" --exact --scope user --accept-source-agreements --disable-interactivity
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if (Test-Path "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe") { throw 'WinGet alias survived uninstall' }
+      - name: Retrieve the Scoop installer
+        if: "!cancelled() && runner.os == 'Windows' && steps.archive.outcome == 'success'"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ScoopInstaller/Install
+          ref: 1e2f334083d609986d8c8bc9e31ae8e87c39fab4
+          path: scoop-bootstrap
+          persist-credentials: false
       - name: Exercise Scoop preview manifest in an isolated user tree
         if: "!cancelled() && runner.os == 'Windows' && steps.archive.outcome == 'success'"
         shell: pwsh
         run: |
           $env:SCOOP = Join-Path $env:RUNNER_TEMP 'receipts-scoop'
-          $scoopRoot = Join-Path $env:SCOOP 'apps/scoop/current'
-          git init -q $scoopRoot
-          git -C $scoopRoot fetch -q --depth 1 https://github.com/ScoopInstaller/Scoop.git e6aa3b366bdee8ed138c1e0f7b85192ebdd35d0f
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          git -C $scoopRoot checkout -q --detach FETCH_HEAD
-          $scoop = Join-Path $scoopRoot 'bin/scoop.ps1'
+          & ./scoop-bootstrap/install.ps1 -ScoopDir $env:SCOOP -RunAsAdmin
+          $scoop = Join-Path $env:SCOOP 'shims/scoop.ps1'
           Expand-Archive bundle/preview-installers.zip -DestinationPath scoop-input
           & $scoop install (Resolve-Path 'scoop-input/bucket/receipts.json').Path
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$env:SCOOP/apps/receipts/current/receipts.exe" --version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & $scoop uninstall receipts
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if (Test-Path "$env:SCOOP/shims/receipts.exe") { throw 'Scoop shim survived uninstall' }
+      - if: "!cancelled() && steps.archive.outcome == 'success'"
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
           go-version: 1.27.4
           cache: false
       - name: Install the tagged public Go module
+        if: "!cancelled() && steps.archive.outcome == 'success'"
         shell: bash
         env:
           GOPROXY: direct
