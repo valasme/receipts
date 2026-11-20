@@ -57,6 +57,14 @@ def single_claim(repo, rev):
         assert b"second" not in invoke(
             repo, "--claim-file", "-", data=data, exit_code=2,
         )
+    invalid_rev = json.dumps(dict(claim, rev="HEAD")).encode()
+    diagnostic = invoke(repo, "--claim-file", "-", data=invalid_rev, exit_code=2)
+    assert b"rev-parse" in diagnostic and b"--rev" not in diagnostic
+    legacy_limit = invoke(
+        repo, "--rev", rev, "--path", "sample.txt", "--quote-file", "-",
+        data=b"x" * 131073, exit_code=2,
+    )
+    assert b"64 KiB normalized limit" in legacy_limit
     for flag, value in (("--rev", rev), ("--path", ""), ("--quote-file", "-")):
         invoke(repo, "--claim-file", file, flag, value, exit_code=2)
 

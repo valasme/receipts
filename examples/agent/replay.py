@@ -96,6 +96,7 @@ def replay(binary, proposal_file):
                 end = start + exact[:-1].count(b"\n")
                 assert receipt["evidence"]["lines"] == {"start": start, "end": end}
             else:
+                assert exact.count(b"\n") >= 2
                 expected = "contradicted", "quote_absent"
             assert (receipt["verdict"], receipt["reason"]) == expected
             assert receipt["evidence"]["blob_id"] == git(repo, "rev-parse", ref).decode().strip()

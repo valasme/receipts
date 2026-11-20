@@ -45,7 +45,7 @@ type Receipt struct {
 
 func normalize(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
 
-const resolveCommitHint = " Run git rev-parse --verify 'TAG^{commit}' with your tag or branch, then pass the result to --rev."
+const resolveCommitHint = " Run git rev-parse --verify 'TAG^{commit}' with your tag or branch, then supply the resulting commit ID."
 
 func ValidateRevision(rev string) error {
 	if len(rev) == 64 {

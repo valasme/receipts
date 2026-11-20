@@ -33,7 +33,8 @@ Create a quote without a trailing newline:
   POSIX:      printf %s 'example' > excerpt.txt
   PowerShell: [IO.File]::WriteAllText("$PWD/excerpt.txt", 'example')
 
-Exit 0: completed receipt. Exit 2: invalid input. Exit 1: output failure.
+Exit 0: completed receipt or batch, including per-item errors in a batch.
+Exit 2: invalid invocation. Exit 1: output failure.
 `
 
 func buildVersion() string {
@@ -123,6 +124,9 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		err = check.Validate(rev, path)
 		if err == nil {
 			quote, err = readInput(ctx, stdin, file, 2*check.MaxQuote, "quote")
+			if errors.Is(err, errInputRead) {
+				err = errors.New("cannot read quote within the 64 KiB normalized limit")
+			}
 		}
 	}
 	if ctx.Err() != nil {

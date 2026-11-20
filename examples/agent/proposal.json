@@ -7,19 +7,19 @@
     },
     {
       "path": "guide.txt",
-      "quote": "Export sends receipts automatically.\n",
-      "source_lines": [9, 12]
+      "quote": "Export sends receipts automatically.\n  The queue retries indefinitely.\n",
+      "source_lines": [9, 13]
     },
     {
       "path": "legacy.dat",
       "quote": "Legacy export enabled.\n",
-      "source_lines": [14, 17]
+      "source_lines": [15, 18]
     }
   ],
   "unresolved": [
     {
       "statement": "This change makes export twice as fast.",
-      "source_lines": [19, 19]
+      "source_lines": [20, 20]
     }
   ]
 }
