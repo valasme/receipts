@@ -207,11 +207,20 @@ func (s *store) readBlob(id string) ([]byte, error) {
 }
 
 // Git metadata is data only. Restrict opens to ordinary files beneath the root.
+type objectFileRoot interface {
+	Lstat(string) (os.FileInfo, error)
+	OpenFile(string, int, os.FileMode) (*os.File, error)
+}
+
 func (s *store) file(name string) (*os.File, error) {
+	return s.openObjectFile(s.root, name)
+}
+
+func (s *store) openObjectFile(root objectFileRoot, name string) (*os.File, error) {
 	if err := s.filesystemOp(); err != nil {
 		return nil, err
 	}
-	info, err := s.root.Lstat(name)
+	info, err := root.Lstat(name)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +230,7 @@ func (s *store) file(name string) (*os.File, error) {
 	if err := s.filesystemOp(); err != nil {
 		return nil, err
 	}
-	f, err := s.root.OpenFile(name, os.O_RDONLY|objectOpenFlags, 0)
+	f, err := root.OpenFile(name, os.O_RDONLY|objectOpenFlags, 0)
 	if err != nil {
 		return nil, err
 	}
