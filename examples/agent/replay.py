@@ -82,7 +82,13 @@ def check_preview(binary, repo, rev, proposal_file, claims):
     proposal = json.loads(proposal_file.read_bytes())
     proposal["claims"] = sorted(claims, key=lambda claim: claim["source_lines"][0], reverse=True)
     extra.write_bytes(json.dumps(proposal).encode())
-    result = review(binary, repo, rev, submission.replace(b"\n", b"\r\n"), extra)
+    submission_file = repo / "submission.md"
+    submission_file.write_bytes(submission.replace(b"\n", b"\r\n"))
+    result = subprocess.run(
+        [binary, "review", "--repo", repo, "--rev", rev,
+         "--submission", submission_file, "--proposal", extra],
+        capture_output=True, timeout=20,
+    )
     assert result.returncode == 0 and result.stderr == b"", result
     preview = result.stdout.decode()
     expected = f"Review preview\nRequested commit {rev}\n"
@@ -131,6 +137,8 @@ def check_preview(binary, repo, rev, proposal_file, claims):
     if os.name == "posix":
         check_preview_delivery(binary, repo, rev, extra)
 
+    return preview
+
 
 def check_preview_delivery(binary, repo, rev, proposal):
     command = review_command(binary, repo, rev, proposal)
@@ -174,12 +182,12 @@ def replay(binary, proposal_file):
         repo = Path(directory)
         rev = fixture(repo)
         scope = {"schema_major": 1, "rev": rev}
-        check_preview(binary, repo, rev, proposal_file, proposal["claims"])
+        preview = check_preview(binary, repo, rev, proposal_file, proposal["claims"])
         result = check(binary, repo, "--batch-file", {**scope, "claims": claims})
         assert result["schema_major"] == 1
         assert len(result["results"]) == len(claims) == 3
         observed = set()
-        for item, claim, entry in zip(proposal["claims"], claims, result["results"]):
+        for claim, entry in zip(claims, result["results"]):
             receipt = entry["receipt"]
             assert receipt == check(binary, repo, "--claim-file", {**scope, **claim})
             ref = f'{rev}:{claim["path"]}'
@@ -198,14 +206,13 @@ def replay(binary, proposal_file):
             assert (receipt["verdict"], receipt["reason"]) == expected
             assert receipt["evidence"]["blob_id"] == git(repo, "rev-parse", ref).decode().strip()
             observed.add(receipt["verdict"])
-            print(f'{item["source_lines"]} {claim["path"]}: {receipt["verdict"]} ({receipt["reason"]})')
         assert observed == {"verified", "contradicted", "cant_check"}
 
     assert len(proposal["unresolved"]) == 1
     for item in proposal["unresolved"]:
         lines = source_lines(submission, item["source_lines"])
         assert lines == [item["statement"]] == ["This change makes export twice as fast."]
-        print(f'{item["source_lines"]} Unresolved: {item["statement"]}')
+    print(preview, end="")
 
 
 if __name__ == "__main__":
