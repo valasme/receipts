@@ -1,40 +1,65 @@
 """Stage the exact outputs of one GoReleaser run with preview-channel manifests."""
 
-import hashlib
+import argparse
 import json
 import re
 import shutil
-import sys
+import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 
 
-def prepare(dist, out):
+from bundle import (
+    INSTALLERS, MANIFEST, RECORD, VERSION, digest, extract_native,
+    read_manifest, release_assets, verify_bundle,
+)
+from toolchain import release_binaries, scan
+
+
+def prepare(dist, out, *, tag, commit, workflow, compiler, scanner):
     metadata = json.loads((dist / "metadata.json").read_text())
     version = metadata["version"]
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", version):
-        raise ValueError("invalid version")
-    base = f"https://github.com/valasme/receipts/releases/download/v{version}/"
-    out.mkdir(exist_ok=False)
-    assets = {}
-    for system in ["darwin", "linux", "windows"]:
-        for arch in ["amd64", "arm64"]:
-            for suffix in {
-                "darwin": ["tar.gz"],
-                "linux": ["tar.gz", "deb", "rpm"],
-                "windows": ["zip"],
-            }[system]:
-                name = f"receipts_{version}_{system}_{arch}.{suffix}"
-                shutil.copyfile(dist / name, out / name)
-                assets[name] = hashlib.sha256((out / name).read_bytes()).hexdigest()
-    original = {
-        name: digest
-        for digest, name in (
-            line.split() for line in (dist / "checksums.txt").read_text().splitlines()
+    if not re.fullmatch(VERSION, version) or metadata["commit"] != commit:
+        raise ValueError("GoReleaser metadata does not match the selected revision")
+    if out.exists() or out.is_symlink():
+        raise FileExistsError(out)
+    toolchain = subprocess.check_output(["go", "version"], text=True, timeout=30).strip()
+    if toolchain.split()[2] != compiler:
+        raise ValueError(f"Expected compiler {compiler}, observed {toolchain}")
+    binaries = release_binaries(dist, compiler, commit)
+
+    with tempfile.TemporaryDirectory(prefix=f".{out.name}-", dir=out.parent) as staging:
+        candidate = Path(staging) / "bundle"
+        candidate.mkdir()
+        assets = {}
+        for name in sorted(release_assets(version)):
+            shutil.copyfile(dist / name, candidate / name)
+            assets[name] = digest(candidate / name)
+        if assets != read_manifest(dist / MANIFEST):
+            raise ValueError("Release outputs differ from GoReleaser checksums")
+        installer_manifests(candidate, version, assets)
+        record = {
+            "source_commit": commit, "source_tag": tag, "workflow_commit": workflow,
+            "compiler": toolchain, "version": version,
+        }
+        (candidate / RECORD).write_text(json.dumps(record, sort_keys=True) + "\n", encoding="ascii")
+        assets.update({name: digest(candidate / name) for name in (RECORD, INSTALLERS)})
+        (candidate / MANIFEST).write_bytes(
+            "".join(f"{sha}  {name}\n" for name, sha in sorted(assets.items())).encode("ascii")
         )
-    }
-    if assets != original:
-        raise ValueError("release outputs differ from generated checksums")
+        bundle = verify_bundle(candidate, tag=tag, commit=commit, workflow=workflow)
+        for (system, arch), binary in binaries.items():
+            with tempfile.TemporaryDirectory(dir=staging) as extraction:
+                archived = extract_native(bundle, system, arch, Path(extraction))
+                if digest(archived) != digest(binary):
+                    raise ValueError(f"Archive contains a different executable: {system}/{arch}")
+        scan(binaries, scanner)
+        candidate.rename(out)
+
+
+def installer_manifests(out, version, assets):
+    base = f"https://github.com/valasme/receipts/releases/download/v{version}/"
 
     def package(system, arch, suffix):
         name = f"receipts_{version}_{system}_{arch}.{suffix}"
@@ -62,9 +87,10 @@ def prepare(dist, out):
         '    pkgshare.install "LICENSE", "THIRD-PARTY-NOTICES.txt"',
         "  end",
         "  test do",
-        '    assert_match version.to_s, shell_output("#{bin}/receipts --version")',
+        '    executable = (bin/"receipts").to_s.shellescape',
+        '    assert_equal "receipts #{version}", shell_output("#{executable} --version").strip',
         '    notices = (pkgshare/"LICENSE").read + "\\n" + (pkgshare/"THIRD-PARTY-NOTICES.txt").read',
-        '    assert_equal notices, shell_output("#{bin}/receipts --licenses")',
+        '    assert_equal notices, shell_output("#{executable} --licenses")',
         "  end",
         "end",
     ]
@@ -135,13 +161,15 @@ def prepare(dist, out):
             *manifests.items(),
         ]:
             z.writestr(zipfile.ZipInfo(name), content + "\n")
-    assets["preview-installers.zip"] = hashlib.sha256(
-        (out / "preview-installers.zip").read_bytes()
-    ).hexdigest()
-    (out / "checksums.txt").write_text(
-        "".join(f"{assets[n]}  {n}\n" for n in sorted(assets)), encoding="ascii"
-    )
 
 
 if __name__ == "__main__":
-    prepare(Path(sys.argv[1]), Path(sys.argv[2]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("dist", type=Path)
+    parser.add_argument("out", type=Path)
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--commit", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--compiler", required=True)
+    parser.add_argument("--scanner", type=Path, required=True)
+    prepare(**vars(parser.parse_args()))

@@ -3,8 +3,15 @@ on:
   workflow_call:
     inputs:
       candidate_revision:
-        description: Test the candidate artifact built by this workflow run
-        required: true
+        description: Pinned source commit of the candidate artifact built by this run
+        type: string
+      candidate_tag:
+        type: string
+      tag:
+        type: string
+      expected_commit:
+        type: string
+      expected_checksum:
         type: string
   release:
     types: [published]
@@ -35,33 +42,45 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      TAG: ${{ inputs.candidate_tag || github.event.release.tag_name || inputs.tag }}
       GH_TOKEN: ${{ github.token }}
       CANDIDATE: ${{ inputs.candidate_revision }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ inputs.candidate_revision || format('refs/tags/{0}', github.event.release.tag_name || inputs.tag) }}
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         if: inputs.candidate_revision != ''
         with:
           name: candidate
           path: bundle
-      - name: Retrieve the public release and verify its signed manifest
+      - id: public
+        name: Retrieve and authenticate the complete public bundle
         if: inputs.candidate_revision == ''
         shell: bash
-        run: |
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir bundle
-          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
-          jq -e --arg tag "$TAG" --arg commit "$commit" '.source_tag == $tag and .source_commit == $commit' bundle/build-record.json
-          gh attestation verify bundle/build-record.json --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-digest "$(jq -r .workflow_commit bundle/build-record.json)"
-          gh attestation verify bundle/checksums.txt --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-digest "$(jq -r .workflow_commit bundle/build-record.json)"
-      - id: archive
-        run: python tests/package_smoke.py bundle
         env:
-          RECEIPTS_NATIVE_ARCH: ${{ runner.arch }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          EXPECTED_CHECKSUM: ${{ inputs.expected_checksum }}
+        run: |
+          args=()
+          if [[ -n "$EXPECTED_COMMIT" ]]; then args+=(--commit "$EXPECTED_COMMIT"); fi
+          if [[ -n "$EXPECTED_CHECKSUM" ]]; then args+=(--checksum "$EXPECTED_CHECKSUM"); fi
+          python packaging/stage.py public "$TAG" bundle "${args[@]}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.candidate_revision || steps.public.outputs.commit }}
+          path: source
+          persist-credentials: false
+      - id: archive
+        shell: bash
+        env:
+          SOURCE_COMMIT: ${{ inputs.candidate_revision || steps.public.outputs.commit }}
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          args=()
+          if [[ -n "$CANDIDATE" ]]; then args+=(--workflow "$WORKFLOW_COMMIT"); fi
+          python tests/package_smoke.py bundle source --tag "$TAG" --commit "$SOURCE_COMMIT" "${args[@]}"
       - name: Install the preview Homebrew formula
         if: runner.os == 'macOS'
         env:
@@ -93,8 +112,8 @@ jobs:
           arch=$(dpkg --print-architecture)
           sudo dpkg -i bundle/*_linux_"$arch".deb
           /usr/bin/receipts --version
-          if test -f tests/installed_licenses.py; then
-            python tests/installed_licenses.py /usr/bin/receipts /usr/share/doc/receipts/copyright
+          if test -f source/tests/installed_licenses.py; then
+            python source/tests/installed_licenses.py /usr/bin/receipts /usr/share/doc/receipts/copyright
           fi
           sudo dpkg -r receipts
           test ! -e /usr/bin/receipts
@@ -109,8 +128,8 @@ jobs:
           sudo rpm --root "$root" --initdb
           sudo rpm --root "$root" --nodeps --ignorearch -i bundle/*_linux_"$arch".rpm
           "$root/usr/bin/receipts" --version
-          if test -f tests/installed_licenses.py; then
-            python tests/installed_licenses.py "$root/usr/bin/receipts" "$root/usr/share/licenses/receipts/LICENSE"
+          if test -f source/tests/installed_licenses.py; then
+            python source/tests/installed_licenses.py "$root/usr/bin/receipts" "$root/usr/share/licenses/receipts/LICENSE"
           fi
           sudo rpm --root "$root" -e receipts
           test ! -e "$root/usr/bin/receipts"
@@ -146,8 +165,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe" --version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if (Test-Path tests/installed_licenses.py) {
-            python tests/installed_licenses.py "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe"
+          if (Test-Path source/tests/installed_licenses.py) {
+            python source/tests/installed_licenses.py "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
           winget uninstall --name "Receipts Preview" --exact --scope user --accept-source-agreements --disable-interactivity
@@ -182,9 +201,9 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$env:SCOOP/apps/receipts/current/receipts.exe" --version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if (Test-Path tests/installed_licenses.py) {
+          if (Test-Path source/tests/installed_licenses.py) {
             $app = "$env:SCOOP/apps/receipts/current"
-            python tests/installed_licenses.py "$app/receipts.exe" "$app/LICENSE"
+            python source/tests/installed_licenses.py "$app/receipts.exe" "$app/LICENSE"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
           & $scoop uninstall receipts
@@ -201,9 +220,9 @@ jobs:
         env:
           GOPROXY: direct
         run: |
-          license_test="$PWD/tests/installed_licenses.py"
+          license_test="$PWD/source/tests/installed_licenses.py"
           if [[ -n "$CANDIDATE" ]]; then
-            go install ./cmd/receipts
+            (cd source && go install ./cmd/receipts)
           else
             cd "$RUNNER_TEMP"
             go install "github.com/valasme/receipts/cmd/receipts@$TAG"
