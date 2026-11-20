@@ -126,4 +126,5 @@ for suite in acceptance evaluate claim_files file_changes; do
   RECEIPTS_VALIDATE_SCHEMA=1 python "tests/$suite.py" ./receipts-test.exe
 done
 ```
+
 The candidate and transition jobs require native Linux, macOS and Windows runners to qualify their installers and network isolation adapters. See the [release and recovery guide](../release.md) for candidate and public qualification.

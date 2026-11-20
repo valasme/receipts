@@ -11,6 +11,7 @@
 | [Council decisions](council.md) | Which objections changed the plan and what would reopen a choice |
 | [Maintainer and debugging checklist](maintainer-checklist.md) | How to diagnose a broken command, which tools exist and which skills the release still needs to demonstrate |
 | [520-point review inventory](review-inventory.md) | Which individual concerns belong to local alpha, release, pilot or later discovery |
+| [Architecture and CLI audit remediation](audit-remediation.md) | Evidence and open verification for the 123 audit findings |
 
 The [implementation verification record](../verification.md) gives the source revision, test outcomes, council decisions and human evidence still needed.
 
