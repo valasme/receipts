@@ -16,22 +16,22 @@ For a toolchain-only rebuild of an existing source tag, run the Release workflow
 
 ## Install the unsigned limited preview
 
-Download the archive matching your OS and processor. Each archive contains the executable, a README and the Apache-2.0 license. [v0.0.1-pre.1 assets](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.1)
+Download the archive matching your OS and processor. Each archive contains the executable, a README, the Apache-2.0 license and third-party notices. [v0.0.1-pre.2 assets](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.2)
 
 | Operating system | Intel or AMD 64-bit | ARM64 |
 | --- | --- | --- |
-| Linux | `receipts_0.0.1-pre.1_linux_amd64.tar.gz` | `receipts_0.0.1-pre.1_linux_arm64.tar.gz` |
-| macOS | `receipts_0.0.1-pre.1_darwin_amd64.tar.gz` | `receipts_0.0.1-pre.1_darwin_arm64.tar.gz` (Apple Silicon) |
-| Windows | `receipts_0.0.1-pre.1_windows_amd64.zip` | `receipts_0.0.1-pre.1_windows_arm64.zip` |
+| Linux | `receipts_0.0.1-pre.2_linux_amd64.tar.gz` | `receipts_0.0.1-pre.2_linux_arm64.tar.gz` |
+| macOS | `receipts_0.0.1-pre.2_darwin_amd64.tar.gz` | `receipts_0.0.1-pre.2_darwin_arm64.tar.gz` (Apple Silicon) |
+| Windows | `receipts_0.0.1-pre.2_windows_amd64.zip` | `receipts_0.0.1-pre.2_windows_arm64.zip` |
 
 Verify the downloaded archive with the provenance command above. A matching SHA-256 establishes that its bytes match the entry in the manifest. The GitHub attestation identifies the workflow that produced it. Extract it into a directory you own, then run `./receipts --help` on Linux or macOS, or `.\receipts.exe --help` in PowerShell. To uninstall, delete that extracted directory. Apple notarization and Windows Authenticode are pending. Use the install methods your organization and OS permit.
 
 With Go and its binary directory on PATH, you can install the pinned source module instead:
 
-    go install github.com/valasme/receipts/cmd/receipts@v0.0.1-pre.1
+    go install github.com/valasme/receipts/cmd/receipts@v0.0.1-pre.2
     receipts --version
 
-The Go install reports `receipts v0.0.1-pre.1`. Release archives report `receipts 0.0.1-pre.1`.
+The Go install reports `receipts v0.0.1-pre.2`. Release archives report `receipts 0.0.1-pre.2`.
 
 Linux deb and rpm packages are available on the same release. The optional `preview-installers.zip` contains `Formula/receipts.rb`, `bucket/receipts.json` and the multi-file `winget/` manifest. These work with a local Homebrew tap, a local Scoop manifest and WinGet's local-manifest feature. Their URLs point to the public release. Stable package-index registration remains outside this preview. The [consumer workflow](../.github/workflows/consumer.yml) gives the commands tested on each platform.
 

@@ -68,6 +68,9 @@ jobs:
           tap=$(brew --repository valasme/receipts-preview)
           mkdir -p "$tap/Formula"
           cp manifests/Formula/receipts.rb "$tap/Formula/receipts.rb"
+          if brew command trust >/dev/null 2>&1; then
+            brew trust --formula valasme/receipts-preview/receipts
+          fi
           if [[ -n "$CANDIDATE" ]]; then
             cache=$(brew --cache --build-from-source valasme/receipts-preview/receipts)
             mkdir -p "$(dirname "$cache")"
@@ -193,6 +196,7 @@ jobs:
         env:
           GOPROXY: direct
         run: |
+          license_test="$PWD/tests/installed_licenses.py"
           if [[ -n "$CANDIDATE" ]]; then
             go install ./cmd/receipts
           else
@@ -206,7 +210,7 @@ jobs:
           if [[ -z "$CANDIDATE" ]]; then
             [[ "$("$installed" --version)" == "receipts $TAG" ]]
           fi
-          if [[ -f "$GITHUB_WORKSPACE/tests/installed_licenses.py" ]]; then
-            python "$GITHUB_WORKSPACE/tests/installed_licenses.py" "$installed"
+          if [[ -f "$license_test" ]]; then
+            python "$license_test" "$installed"
           fi
           rm "$installed"
