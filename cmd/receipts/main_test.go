@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 type failedOutput struct{}
@@ -141,4 +145,63 @@ func TestInterruptWhileWaitingForInput(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cancelled input blocked")
 	}
+}
+
+func TestOptionDiagnostics(t *testing.T) {
+	for command, options := range map[string][]string{
+		"check":  {"repo", "rev", "path", "quote-file", "claim-file", "batch-file", "format"},
+		"review": {"repo", "rev", "compare", "proposal", "submission"},
+	} {
+		for _, option := range options {
+			var out, diagnostic strings.Builder
+			flag := "--" + option
+			code := run([]string{command, flag + "=first-private", flag, "second-private"}, &out, &diagnostic)
+			if code != 2 || out.Len() != 0 || !strings.Contains(diagnostic.String(), "duplicate "+flag+" option") || strings.Contains(diagnostic.String(), "-private") {
+				t.Errorf("%s duplicate %s: exit %d, stdout=%q stderr=%q", command, flag, code, out.String(), diagnostic.String())
+			}
+		}
+		for _, help := range []string{"-h", "--help"} {
+			var out, diagnostic strings.Builder
+			if code := run([]string{command, help}, &out, &diagnostic); code != 0 || !strings.Contains(out.String(), "Usage:") {
+				t.Errorf("%s %s did not show usage", command, help)
+			}
+			for _, option := range []string{"--repo=.", "--unknown=secret"} {
+				out.Reset()
+				diagnostic.Reset()
+				if code := run([]string{command, option, help}, &out, &diagnostic); code != 2 || out.Len() != 0 || strings.Contains(diagnostic.String(), "secret") {
+					t.Errorf("%s %s with other arguments returned %d, %q", command, help, code, diagnostic.String())
+				}
+			}
+		}
+	}
+}
+
+func FuzzSavedQuotationMatchesRaw(f *testing.F) {
+	for _, seed := range []string{"literal", "café 🎉\r\n\t", "\"\\", "\x00", "e\u0301", "a\u2028b", ""} {
+		f.Add(seed)
+	}
+	repo := f.TempDir()
+	rev := strings.Repeat("0", 40)
+	f.Fuzz(func(t *testing.T, quote string) {
+		if !utf8.ValidString(quote) || len(quote) > 2048 {
+			t.Skip()
+		}
+		claim, err := json.Marshal(map[string]any{
+			"schema_major": 1, "rev": rev, "path": "sample.txt", "quote": quote,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		base := []string{"check", "--repo", repo, "--format", "json"}
+		var rawOutput, savedOutput, rawError, savedError strings.Builder
+		raw := execute(context.Background(),
+			append(slices.Clone(base), "--rev", rev, "--path", "sample.txt", "--quote-file", "-"),
+			strings.NewReader(quote), &rawOutput, &rawError)
+		saved := execute(context.Background(),
+			append(slices.Clone(base), "--claim-file", "-"),
+			bytes.NewReader(claim), &savedOutput, &savedError)
+		if raw != saved || rawOutput.String() != savedOutput.String() {
+			t.Fatalf("raw quote gave exit %d and %q, saved quote gave exit %d and %q", raw, rawOutput.String(), saved, savedOutput.String())
+		}
+	})
 }

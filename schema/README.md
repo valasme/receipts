@@ -1,0 +1,7 @@
+# Receipts JSON contracts
+
+[Saved claim and batch input](claim-input-v1.json) and [review proposal](review-proposal-v1.json) describe documents to submit to the CLI. Input objects use exact, case-sensitive field names. The CLI rejects unknown and duplicate fields, unpaired surrogate escapes, and a version other than the literal integer token `1`. A proposal may omit `schema_major` for compatibility with unversioned proposals. Check byte limits, paths, line ranges, semantic correspondence to the submission, and the combined entry limit with the CLI. Those conditions depend on the original bytes or on more than one field. A batch with an invalid entry can still return an error for that entry and process the other claims.
+
+[Quote receipt](receipt-v1.json) and [batch result](batch-result-v1.json) describe emitted documents. Consumers may ignore unknown extension fields within a supported schema major. Required field names and allowed verdicts still apply. When a quote receipt has `observed_commit`, it must equal `requested_commit`. A located quotation has an inclusive range whose `end` is greater than or equal to its `start`. Apply these comparisons after structural schema validation.
+
+A batch has one entry per input item in the same order. Each entry carries either a receipt or a human-readable diagnostic. Diagnostic wording may change. Check the successful process exit and the entire document before using it. After output failure or cancellation, discard any partial document.

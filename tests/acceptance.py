@@ -14,13 +14,9 @@ binary = Path(sys.argv[1]).resolve()
 
 validator = None
 if os.getenv("RECEIPTS_VALIDATE_SCHEMA") == "1":
-    from jsonschema import Draft202012Validator
+    from receipt_contract import validate_quote, validator as load_validator
 
-    schema = json.loads(
-        (Path(__file__).resolve().parents[1] / "schema/receipt-v1.json").read_text()
-    )
-    Draft202012Validator.check_schema(schema)
-    validator = Draft202012Validator(schema)
+    validator = load_validator("receipt-v1.json")
 
 
 def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
@@ -53,7 +49,7 @@ def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
         return p.stdout.decode()
     receipt = json.loads(p.stdout)
     if validator:
-        validator.validate(receipt)
+        validate_quote(receipt, validator)
     return receipt
 
 

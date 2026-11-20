@@ -1,6 +1,10 @@
 """Exercise saved claim files through the built CLI."""
 
+import copy
 import json
+import os
+import select
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -58,6 +62,14 @@ def single_claim(repo, rev):
         assert b"second" not in invoke(
             repo, "--claim-file", "-", data=data, exit_code=2,
         )
+    for data, label in (
+        (b" " * (768 * 1024 + 1), b"claim input exceeds the limit of 786432 bytes"),
+        (b'{"unknown-secret":0}', b"unknown field"),
+        (b'{"path":1,"path":2}', b"duplicate path field"),
+        (b'{"schema_major":1,"rev":[]}', b"requires rev"),
+    ):
+        diagnostic = invoke(repo, "--claim-file", "-", data=data, exit_code=2)
+        assert label in diagnostic and b"unknown-secret" not in diagnostic, diagnostic
     invalid_rev = json.dumps(dict(claim, rev="HEAD")).encode()
     diagnostic = invoke(repo, "--claim-file", "-", data=invalid_rev, exit_code=2)
     assert b"rev-parse" in diagnostic and b"--rev" not in diagnostic
@@ -115,8 +127,108 @@ def batch_claims(repo, rev):
         file.read_bytes().replace(rev.encode(), b'HEAD'),
     ):
         invoke(repo, "--batch-file", "-", data=data, exit_code=2)
+    diagnostic = invoke(repo, "--batch-file", "-", data=b" " * ((1 << 20) + 1), exit_code=2)
+    assert b"batch input exceeds the limit of 1048576 bytes" in diagnostic, diagnostic
     for flag, value in (("--format", "text"), ("--claim-file", "-"), ("--rev", rev)):
         invoke(repo, "--batch-file", file, flag, value, exit_code=2)
+
+
+def schema_contract(repo, rev):
+    from jsonschema import ValidationError
+    from receipt_contract import validate_quote, validator
+
+    intake = validator("claim-input-v1.json")
+    batch_schema = validator("batch-result-v1.json")
+    receipt_schema = validator("receipt-v1.json")
+    quote = {"path": "sample.txt", "quote": "café 🎉"}
+    claim = {"schema_major": 1, "rev": rev, **quote}
+    batch = {"schema_major": 1, "rev": rev, "claims": [quote]}
+    for item in (claim, batch):
+        intake.validate(item)
+        assert not intake.is_valid({**item, "unknown_extension": True})
+    result = json.loads(invoke(repo, "--batch-file", "-", data=json.dumps(batch).encode()))
+    batch_schema.validate(result)
+    for item in ({}, {**result["results"][0], "error": "ambiguous"}):
+        assert not batch_schema.is_valid({**result, "results": [item]})
+    receipt = result["results"][0]["receipt"]
+    validate_quote({**receipt, "additional_info": 1}, receipt_schema)
+    wrong_key = {**receipt, "Verdict": receipt["verdict"]}
+    wrong_key.pop("verdict")
+    assert not receipt_schema.is_valid(wrong_key)
+    for updates in (
+        {"observed_commit": "0" * 40},
+        {"lines": {"start": 2, "end": 1}},
+        {"tree_id": "1" * 40, "missing_component": "sample.txt"},
+    ):
+        invalid = copy.deepcopy(receipt)
+        invalid["evidence"].update(updates)
+        try:
+            validate_quote(invalid, receipt_schema)
+        except ValidationError:
+            pass
+        else:
+            raise AssertionError(f"invalid witness accepted: {updates}")
+
+
+def interrupt_processes(repo, rev):
+    for args in (
+        ("--rev", rev, "--path", "sample.txt", "--quote-file", "-"),
+        ("--claim-file", "-"),
+    ):
+        reader, writer = os.pipe()
+        try:
+            os.set_blocking(writer, False)
+            while True:
+                try:
+                    os.write(writer, b" " * 4096)
+                except BlockingIOError:
+                    break
+            with subprocess.Popen(
+                [binary, "check", "--repo", repo, *args],
+                stdin=reader, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            ) as process:
+                try:
+                    # Reading makes the full pipe writable. Holding its
+                    # writer open keeps the command blocked before EOF.
+                    assert select.select([], [writer], [], 10)[1]
+                    process.send_signal(signal.SIGINT)
+                    assert process.wait(timeout=10) == 130
+                    assert process.stdout.read() == b""
+                    assert b"Check interrupted" in process.stderr.read()
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+        finally:
+            os.close(writer)
+            os.close(reader)
+
+    data = {"schema_major": 1, "rev": rev, "claims": [{"path": "x" * 4096, "quote": "sample"}] * 16}
+    with subprocess.Popen(
+        [binary, "check", "--repo", repo, "--batch-file", "-"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ) as process:
+        try:
+            process.stdin.write(json.dumps(data).encode())
+            process.stdin.close()
+            assert select.select([process.stdout], [], [], 10)[0]
+            prefix = process.stdout.read(1)
+            assert prefix == b"{"
+            process.send_signal(signal.SIGINT)
+            assert process.wait(timeout=10) == 130
+            assert b"Check interrupted" in process.stderr.read()
+            try:
+                json.loads(prefix + process.stdout.read())
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("interrupted delivery unexpectedly formed a complete batch")
+        finally:
+            if process.poll() is None:
+                process.kill()
+
+    fifo = repo / "named-pipe"
+    os.mkfifo(fifo)
+    assert b"regular file or - for stdin" in invoke(repo, "--claim-file", fifo, exit_code=2)
 
 
 def main():
@@ -131,6 +243,10 @@ def main():
         rev = git(repo, "rev-parse", "HEAD")
         single_claim(repo, rev)
         batch_claims(repo, rev)
+        if os.environ.get("RECEIPTS_VALIDATE_SCHEMA") == "1":
+            schema_contract(repo, rev)
+        if os.name == "posix":
+            interrupt_processes(repo, rev)
     print("Saved claim file and stdin contracts passed.")
 
 

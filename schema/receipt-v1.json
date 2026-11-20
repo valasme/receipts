@@ -79,7 +79,23 @@
           ]
         }
       },
-      "required": []
+      "dependentRequired": {
+        "observed_commit": [
+          "object_format"
+        ],
+        "blob_id": [
+          "observed_commit"
+        ],
+        "tree_id": [
+          "observed_commit"
+        ],
+        "missing_component": [
+          "tree_id"
+        ],
+        "lines": [
+          "blob_id"
+        ]
+      }
     },
     "verdict": {
       "enum": [
@@ -119,7 +135,21 @@
             "observed_commit",
             "blob_id",
             "lines"
-          ]
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "tree_id"
+                ]
+              },
+              {
+                "required": [
+                  "missing_component"
+                ]
+              }
+            ]
+          }
         }
       }
     },
@@ -138,7 +168,26 @@
             "object_format",
             "observed_commit",
             "blob_id"
-          ]
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "tree_id"
+                ]
+              },
+              {
+                "required": [
+                  "missing_component"
+                ]
+              },
+              {
+                "required": [
+                  "lines"
+                ]
+              }
+            ]
+          }
         }
       }
     },
@@ -158,7 +207,21 @@
             "observed_commit",
             "tree_id",
             "missing_component"
-          ]
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "blob_id"
+                ]
+              },
+              {
+                "required": [
+                  "lines"
+                ]
+              }
+            ]
+          }
         }
       }
     },
@@ -179,31 +242,19 @@
           ]
         },
         "evidence": {
-          "required": []
-        }
-      }
-    }
-  ],
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "verdict": {
-            "enum": [
-              "contradicted",
-              "cant_check"
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "missing_component"
+                ]
+              },
+              {
+                "required": [
+                  "lines"
+                ]
+              }
             ]
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "evidence": {
-            "not": {
-              "required": [
-                "lines"
-              ]
-            }
           }
         }
       }

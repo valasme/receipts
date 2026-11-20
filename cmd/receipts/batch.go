@@ -46,9 +46,14 @@ func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 		if ctx.Err() != nil {
 			break
 		}
-		quote, ok := readQuotation(objectFields(item, "path", "quote"))
-		if !ok {
-			results = append(results, batchResult{Error: "invalid claim; expected path and quote"})
+		fields, err := objectFields(item, "path", "quote")
+		if err != nil {
+			results = append(results, batchResult{Error: err.Error()})
+			continue
+		}
+		quote, err := readQuotation(fields)
+		if err != nil {
+			results = append(results, batchResult{Error: err.Error()})
 			continue
 		}
 		receipt, err := check.Verify(clock, repo, rev, quote.path, []byte(quote.text), version)
@@ -69,7 +74,10 @@ func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 }
 
 func readBatch(data []byte) (string, []json.RawMessage, error) {
-	fields := objectFields(data, "schema_major", "rev", "claims")
+	fields, err := objectFields(data, "schema_major", "rev", "claims")
+	if err != nil {
+		return "", nil, fmt.Errorf("batch file: %w", err)
+	}
 	rev, ok := jsonString(fields["rev"])
 	if string(fields["schema_major"]) != "1" || !ok {
 		return "", nil, errors.New("invalid batch file; expected schema_major 1, rev, and claims")

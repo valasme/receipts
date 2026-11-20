@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Receipts literal source-line review proposal, major 1",
+  "type": "object",
+  "$defs": {
+    "span": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "integer", "minimum": 1 }
+    },
+    "path": { "type": "string", "minLength": 1, "pattern": "^[^`]+$" },
+    "text": { "type": "string", "minLength": 1 },
+    "quotation": {
+      "type": "object",
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "quote": { "$ref": "#/$defs/text", "pattern": "\\n$" },
+        "source_lines": { "$ref": "#/$defs/span" }
+      },
+      "required": ["path", "quote", "source_lines"],
+      "additionalProperties": false
+    },
+    "statement": {
+      "type": "object",
+      "properties": {
+        "statement": { "$ref": "#/$defs/text" },
+        "source_lines": { "$ref": "#/$defs/span" }
+      },
+      "required": ["statement", "source_lines"]
+    }
+  },
+  "properties": {
+    "schema_major": { "const": 1 },
+    "claims": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/quotation" } },
+    "file_changes": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "allOf": [{ "$ref": "#/$defs/statement" }],
+        "properties": { "path": { "$ref": "#/$defs/path" } },
+        "required": ["path"],
+        "unevaluatedProperties": false
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/statement",
+        "unevaluatedProperties": false
+      }
+    }
+  },
+  "required": ["claims", "unresolved"],
+  "additionalProperties": false
+}

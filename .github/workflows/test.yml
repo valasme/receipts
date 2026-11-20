@@ -65,5 +65,7 @@ jobs:
           go build -o receipts-test.exe ./cmd/receipts
           "$RUNNER_TEMP/schema/bin/python" tests/acceptance.py ./receipts-test.exe
           "$RUNNER_TEMP/schema/bin/python" tests/evaluate.py ./receipts-test.exe
+          "$RUNNER_TEMP/schema/bin/python" tests/claim_files.py ./receipts-test.exe
+          "$RUNNER_TEMP/schema/bin/python" tests/file_changes.py ./receipts-test.exe
         env:
           RECEIPTS_VALIDATE_SCHEMA: '1'

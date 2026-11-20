@@ -93,7 +93,7 @@ For a batch, use one commit and a list of quotations:
 {"schema_major":1,"rev":"0123456789abcdef0123456789abcdef01234567","claims":[{"path":"README.md","quote":"# Receipts\n"},{"path":"go.mod","quote":"go 1.25.0\n"}]}
 ```
 
-Run `receipts check --repo . --batch-file batch.json`. The output is a JSON object with `schema_major: 1` and `results` in input order. Each result has a `receipt` using the existing receipt schema or an `error` with a diagnostic for invalid input. An unavailable object yields a receipt with verdict `cant_check`. A complete batch exits 0 even when some items have errors. An invalid envelope exits 2 with a diagnostic on stderr. Use `-` as either file name to read stdin.
+Run `receipts check --repo . --batch-file batch.json`. The output is a JSON object with `schema_major: 1` and `results` in input order. Each result has a `receipt` using the existing receipt schema or an `error` with a diagnostic for invalid input. An unavailable object yields a receipt with verdict `cant_check`. A complete batch exits 0 even when some items have errors. An invalid envelope exits 2 with a diagnostic on stderr. Use `-` as either file name to read stdin. Use a regular file for any named input. [JSON input and result contracts](schema/README.md)
 
 The single-claim input limit is 768 KiB. A batch can contain 1–16 claims, with at most 1 MiB of input and a shared five-second lookup budget. Use the exact JSON field names and include each field once. Existing path and quote limits apply to each claim. See the [working agent example](examples/agent/README.md) for a PR-to-receipt walkthrough.
 
@@ -115,7 +115,7 @@ To check whether a file changed, add a file-change proposal and pass `--compare 
 
 **Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.
 
-Text is the default. Use `--format markdown` for a pasteable block and `--format json` for schema-major-1 output. All three verdicts exit 0. Invalid inputs exit 2. Output failures exit 1. Check both the exit status and complete JSON before using a receipt. A receipt can reveal a private path or guessable quote digest.
+Text is the default. Use `--format markdown` for a pasteable block and `--format json` for schema-major-1 output. All three verdicts exit 0. Invalid inputs exit 2. Output failures exit 1. Check both the exit status and complete JSON before using a receipt. A receipt can reveal a private path or guessable quote digest. [Receipt schema and compatibility](schema/README.md)
 
 Use `receipts check --help` for quotation input and output options, or `receipts review --help` for the review preview. Interrupting a check or review with Ctrl+C exits 130.
 

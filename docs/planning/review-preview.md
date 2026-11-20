@@ -14,11 +14,13 @@ The public issue sample ran from [Agent hint for `gh event listen`](https://gith
 
 ## CLI contract
 
-`receipts review --submission FILE --proposal FILE --rev COMMIT [--compare COMMIT] [--repo DIR]` consumes a UTF-8 Markdown body and a proposal. One input may use stdin. The proposal requires `claims` and `unresolved` arrays and accepts an optional `file_changes` array, with at most 16 total entries. Both files are limited to 1 MiB. Normalize CRLF to LF for matching source spans. Require full SHA-1 commit IDs.
+`receipts review --submission FILE --proposal FILE --rev COMMIT [--compare COMMIT] [--repo DIR]` consumes a UTF-8 Markdown body and a proposal. One input may use stdin. The proposal accepts exact, case-sensitive keys, requires `claims` and `unresolved` arrays and accepts an optional `file_changes` array, with at most 16 total entries. Both files are limited to 1 MiB. Normalize CRLF to LF for matching source spans. Require full SHA-1 commit IDs.
 
-A quotation claim points at one attribution line with a single backticked path, immediately followed by an unindented triple-backtick fence with optional `text` and its exact contents. An unresolved entry identifies its exact statement, which may span lines. Source spans are inclusive, one-based and nonoverlapping. Expected quote text includes the LF before the closing fence. The maintainer reviews the proposals in context. The checks establish literal correspondence within the supplied span.
+A quotation claim points at one attribution line with a single backticked path, immediately followed by an unindented triple-backtick fence with optional `text` and its exact contents. An unresolved entry identifies its exact statement, which may span lines. Source spans are inclusive, one-based and nonoverlapping. See the [proposal schema](../../schema/review-proposal-v1.json). Supply `schema_major: 1` when you want an explicit version. Existing proposals without that field remain valid.
 
-The preview shows each entry in submission order. A checked quote includes the existing human-readable receipt and the safely quoted citation line. An unresolved statement is displayed with its source location and safely quoted text. An unsupported Git observation still produces Can't check. A citation mismatch, malformed input or invalid claim exits 2 without emitting a preview. Empty proposals display that no claims or statements were proposed. Successful delivery exits 0. Output failures exit 1 and cancellation exits 130. Checks share the existing five-second read budget.
+Matching uses literal source lines. A matching span can appear inside a larger fence or a comment. The maintainer decides whether the surrounding Markdown uses it as a citation. Revisit Markdown-aware matching if real submissions show repeated mistakes. The fence grammar requires the final LF before the closing fence and cannot represent paths containing a backtick. Use `receipts check --quote-file` for either quotation case. A file-change statement whose path contains a backtick can remain unresolved.
+
+The preview shows each entry in submission order. Long quoted context uses indented continuation lines with escaped controls. The header shows both pins for file-change claims and marks a supplied comparison unused for other proposals. A checked quote includes the existing human-readable receipt and the safely quoted citation line. An unresolved statement is displayed with its source location and safely quoted text. An unsupported Git observation still produces Can't check. A citation mismatch, malformed input or invalid claim exits 2 without emitting a preview. Empty proposals display that no claims or statements were proposed. Successful delivery exits 0. Output failures exit 1 and cancellation exits 130. Checks share the existing five-second read budget.
 
 Test at the public CLI process boundary with a committed Git fixture and the captured agent proposal. Independently replay the receipts. Include a changed quote, hostile display text, and an empty proposal. Keep the existing checker contract and use no network or model calls in the command.
 
@@ -48,6 +50,26 @@ Four PRs (4/15 overall, 4/12 among the non-bot authors) made explicit claims abo
 | [Preserve workflow cancel errors](https://github.com/cli/cli/pull/15103/files) | `pkg/cmd/run/cancel/cancel.go`, `pkg/cmd/run/cancel/cancel_test.go` |
 | [Handle empty pager commands](https://github.com/cli/cli/pull/15098/files) | `pkg/iostreams/iostreams.go`, `pkg/iostreams/iostreams_test.go` |
 | [Document duplicate events](https://github.com/cli/cli/pull/15094/files) | `pkg/cmd/event/listen/listen.go`, `skills/gh/SKILL.md` |
+
+### Replay the sample
+
+On 2026-11-20, the pagination order selected these 15 PR numbers. The last timestamp was shared with PR 15085. Keep 15086 and exclude 15085 when reproducing the fixed selection.
+
+```text
+15117 15111 15109 15108 15107 15105 15103 15102
+15100 15098 15095 15094 15089 15087 15086
+```
+
+The creation window runs from `2026-11-17T19:19:51Z` through `2026-11-20T14:03:23Z`. Reconstruct the selected set from the creation window and the fixed IDs. For each of the four positive rows, `gh pr view NUMBER --repo cli/cli --json baseRefOid,headRefOid,files` returned the paths above and the following pins on the same date. PR descriptions and the GitHub Files changed view can change. The table records the observation at those pins.
+
+| PR | Observed base tip | Observed head |
+| --- | --- | --- |
+| 15107 | `acee710547dcf7dfb6490afea77972187e74b819` | `ea7704b3a5a109db63b567670ffb9b239251dfb8` |
+| 15103 | `acee710547dcf7dfb6490afea77972187e74b819` | `8adfa6237779f59c2e5e7349284e0842234ed3f9` |
+| 15098 | `acee710547dcf7dfb6490afea77972187e74b819` | `213bebe276b060bb424308a6b61d746edf38ea63` |
+| 15094 | `e1219499a578b69e3437adaa31cd60614e23c802` | `b11a0fb4cf95369b4460010a9cf4bbcdf432ffc1` |
+
+File-change and review receipts remain text. Revisit versioned machine output when a caller needs to retain or replay both side observations. Any new format must be opt-in and preserve the existing quotation JSON.
 
 ## Human comparison trial
 

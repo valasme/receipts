@@ -1,6 +1,8 @@
 """Check file-change receipts through the public review CLI."""
 
+import ast
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -194,7 +196,76 @@ def validate_proposals(binary, repo, comparison, head):
     assert "Submission lines 1–4\nVerified · exact source quote" in preview, preview
     assert "Submission lines 5–6\nVerified · file changed" in preview, preview
     assert "Claim checked · The file at this exact path changed between the two commits.\n" in preview, preview
-    assert 'Submission statement · "This PR\\nupdates `guide.txt` and makes export twice as fast."' in preview, preview
+    display = preview.split("Submission statement\n", 1)[1].splitlines()
+    assert all(line.startswith('  "') and len(line) <= 40 for line in display), preview
+    assert "".join(ast.literal_eval(line.strip()) for line in display) == claim["statement"].replace("\r\n", "\n")
+    assert f"Requested commit {head}\nComparison commit {comparison}" in preview
+
+
+
+def literal_proposals(binary, repo, comparison, head):
+    citation = "From `guide.txt`:\n```\nNew guide\n```"
+    quote = {"path": "guide.txt", "quote": "New guide\n", "source_lines": [1, 4]}
+    outcome = review(binary, repo, comparison, head, citation, {
+        "schema_major": 1, "claims": [quote], "unresolved": [],
+    })
+    assert outcome.returncode == 0 and b"Comparison commit unused" in outcome.stdout, outcome
+    if os.environ.get("RECEIPTS_VALIDATE_SCHEMA") == "1":
+        from receipt_contract import validator
+
+        schema = validator("review-proposal-v1.json")
+        schema.validate({"claims": [quote], "unresolved": []})
+        assert not schema.is_valid({"schema_major": 2, "claims": [quote], "unresolved": []})
+    oversized = " " * ((1 << 20) + 1)
+    bad = review(binary, repo, None, head, oversized, {"claims": [], "unresolved": []})
+    assert bad.returncode == 2 and b"submission input exceeds the limit of 1048576 bytes" in bad.stderr, bad
+    bad = review(binary, repo, None, head, citation, {"claims": [], "unresolved": [], "extra": oversized})
+    assert bad.returncode == 2 and b"proposal input exceeds the limit of 1048576 bytes" in bad.stderr, bad
+    for outer in ("````", "<!--"):
+        result = review(binary, repo, None, head, f"{outer}\n{citation}\n{outer}", {
+            "claims": [{**quote, "source_lines": [2, 5]}], "unresolved": [],
+        })
+        assert result.returncode == 0 and b"Verified" in result.stdout, result
+    bad = review(binary, repo, None, head, citation, {
+        "schema_major": 2, "claims": [quote], "unresolved": [],
+    })
+    assert bad.returncode == 2 and b"schema_major" in bad.stderr and not bad.stdout, bad
+    bad = review(binary, repo, None, head, citation, {
+        "claims": [{**quote, "quote": "New guide"}], "unresolved": [],
+    })
+    assert bad.returncode == 2 and b"must include the LF" in bad.stderr, bad
+
+    odd_path = "a`b.txt"
+    exact = commit(repo, {odd_path: b"exact final line"}, head)
+    raw = subprocess.run(
+        [binary, "check", "--repo", repo, "--rev", exact, "--path", odd_path, "--quote-file", "-"],
+        input=b"exact final line", capture_output=True, timeout=20,
+    )
+    assert raw.returncode == 0 and raw.stdout.startswith(b"Verified"), raw
+    bad = review(binary, repo, None, exact, f"`{odd_path}`:\n```\nexact final line\n```", {
+        "claims": [{**quote, "path": odd_path, "quote": "exact final line\n"}], "unresolved": [],
+    })
+    assert bad.returncode == 2 and b"path contains a backtick" in bad.stderr, bad
+
+    change = file_change("guide.txt", 5)
+    body = [citation, change["statement"], *[f"Context {i}" for i in range(15)]]
+    unresolved = [{"statement": text, "source_lines": [line, line]} for line, text in enumerate(body[2:], 6)]
+    for count in (14, 15):
+        result = review(binary, repo, comparison, head, "\n".join(body), {
+            "claims": [quote], "file_changes": [change], "unresolved": unresolved[:count],
+        })
+        if count == 14:
+            assert result.returncode == 0 and b"Context 13" in result.stdout, result
+        else:
+            assert result.returncode == 2 and not result.stdout and b"16 total entries" in result.stderr, result
+    result = review(binary, repo, comparison, head, "\n".join(body), {
+        "claims": [quote], "file_changes": [change],
+        "unresolved": [{"statement": "```", "source_lines": [4, 4]}],
+    })
+    assert result.returncode == 2 and not result.stdout, result
+    assert all(phrase.encode() in result.stderr for phrase in (
+        "proposal claim 1 (lines 1–4)", "unresolved entry 1 (lines 4–4)",
+    )), result
 
 
 def run(binary, repo):
@@ -202,6 +273,7 @@ def run(binary, repo):
     comparison, head = compare_paths(binary, repo)
     compare_modes_and_kinds(binary, repo)
     validate_proposals(binary, repo, comparison, head)
+    literal_proposals(binary, repo, comparison, head)
     unavailable_objects(binary, repo, comparison, head)
 
 

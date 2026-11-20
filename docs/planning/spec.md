@@ -4,7 +4,7 @@
 
 A maintainer reads “this file contains this code,” pauses review, switches revisions, searches, then tries to explain what they saw. A contributor can do the same work before submitting. Give both people the same local answer and enough information to repeat it. The launch question is whether the receipt saves a reader a trip through Git while preserving the meaning of the original claim. Market-size figures, vendor roadmaps and grant availability are unnecessary assumptions for this decision.
 
-The starting checkout has a help/version CLI, release configuration and CI configuration. All commands, receipts, budgets and acceptance results below describe future work. One person can deliver the local release, entirely offline after installation, without a collaborator, design reviewer, external pilot, paid account or API key.
+The project began with a help/version CLI, release configuration and CI configuration. The design below records the original quotation-checking plan. For the implemented command contract, see the [CLI guide](../../README.md) and [JSON contracts](../../schema/README.md). For demonstrated and untested behavior, see the [verification record](../verification.md). One person can deliver the local release, entirely offline after installation, without a collaborator, design reviewer, external pilot, paid account or API key.
 
 ## User stories
 
@@ -69,7 +69,7 @@ For the optional GitHub pilot, start with a read-only preview from trusted workf
 
 ## Testing and release decisions
 
-Reconstruct labeled fixture repositories and use the installed CLI as a reader would. Include negative controls for incomplete searches, wrong revisions, unavailable trees, normalized offsets, hostile display text, interrupted output, and conflicting worktree edits. Inspect JSON against a versioned schema and render it in a narrow terminal and linear screen-reader order. Compare semantic output across native Linux, macOS and Windows jobs. The starter has a smoke command; checker coverage is future work.
+Reconstruct labeled fixture repositories and use the installed CLI as a reader would. Include negative controls for incomplete searches, wrong revisions, unavailable trees, normalized offsets, hostile display text, interrupted output, and conflicting worktree edits. Inspect JSON against a versioned schema and render it in a narrow terminal and linear screen-reader order. Compare semantic output across native Linux, macOS and Windows jobs. The verification record links the implemented checker coverage.
 
 Ship local alpha when all normative contract cases pass, there are zero false contradictions in a frozen holdout, every decisive result replays, required artifacts match their checksums, and installation plus removal succeeds on each supported platform class. Report numerator and denominator and cases skipped per platform. Cross-compilation proves packaging only. Mark unexercised OS/architecture combinations explicitly as preview. If an artifact fails its own integrity check, withhold that artifact. If verdict correctness fails, hold the release. Publish benchmark misses, support tier and known limits alongside archives.
 

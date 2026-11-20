@@ -50,7 +50,9 @@ Options:
   --repo DIR         Local repository (default: current directory).
   --format FORMAT    text (default), json, or markdown. Batches use json.
 
-Use - for a file read from stdin. CRLF and LF compare equally.
+Use regular files or - for stdin. CRLF and LF compare equally.
+Options accept --name VALUE or --name=VALUE. A single dash also works.
+Use --help or -h by itself after the command.
 To prepare a quotation without a final newline:
 
   POSIX:      printf %s 'example' > excerpt.txt
@@ -74,7 +76,9 @@ Options:
   --compare COMMIT   Full comparison commit ID for file-change claims.
   --repo DIR         Local repository (default: current directory).
 
-Use - for one input file to read it from stdin. Each file may be up to 1 MiB.
+Use regular files or - for one stdin input. Each file may be up to 1 MiB.
+Options accept --name VALUE or --name=VALUE. A single dash also works.
+Use --help or -h by itself after the command.
 
 Exit 0    Complete preview.
 Exit 1    Output failure.
@@ -129,12 +133,14 @@ type stringOption struct {
 	fallback string
 }
 
-func registerOptions(flags *flag.FlagSet, options ...stringOption) map[string]bool {
+func registerOptions(flags *flag.FlagSet, options ...stringOption) (map[string]bool, func([]string) error) {
 	provided := make(map[string]bool)
+	var duplicate string
 	for _, opt := range options {
 		*opt.dst = opt.fallback
 		flags.Func(opt.name, "", func(value string) error {
 			if provided[opt.name] {
+				duplicate = opt.name
 				return errors.New("duplicate option")
 			}
 			provided[opt.name] = true
@@ -142,7 +148,15 @@ func registerOptions(flags *flag.FlagSet, options ...stringOption) map[string]bo
 			return nil
 		})
 	}
-	return provided
+	return provided, func(args []string) error {
+		if err := flags.Parse(args); err == nil && flags.NArg() == 0 {
+			return nil
+		}
+		if duplicate != "" {
+			return fmt.Errorf("duplicate --%s option", duplicate)
+		}
+		return fmt.Errorf("run receipts %s --help for supported options", flags.Name())
+	}
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -184,11 +198,11 @@ func executeCheck(ctx context.Context, args []string, stdin io.Reader, stdout, s
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var repo, rev, path, file, claimFile, batchFile, format string
-	provided := registerOptions(flags, stringOption{"repo", &repo, "."}, stringOption{"rev", &rev, ""},
+	provided, parse := registerOptions(flags, stringOption{"repo", &repo, "."}, stringOption{"rev", &rev, ""},
 		stringOption{"path", &path, ""}, stringOption{"quote-file", &file, ""}, stringOption{"claim-file", &claimFile, ""},
 		stringOption{"batch-file", &batchFile, ""}, stringOption{"format", &format, "text"})
-	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "Invalid check arguments. Run receipts check --help.")
+	if err := parse(args); err != nil {
+		fmt.Fprintln(stderr, "Invalid check arguments:", err)
 		return 2
 	}
 	if repo == "" {
