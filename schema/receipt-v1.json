@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Receipts exact source quote, major 1",
+  "type": "object",
+  "properties": {
+    "schema_major": {
+      "const": 1
+    },
+    "checker_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "comparison_rule": {
+      "const": "utf8-crlf-to-lf-v1"
+    },
+    "claim": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "exact_source_quote"
+        },
+        "requested_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quote_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "requested_commit",
+        "path",
+        "quote_sha256"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "object_format": {
+          "const": "sha1"
+        },
+        "observed_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "blob_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "tree_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "missing_component": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lines": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ]
+        }
+      },
+      "required": []
+    },
+    "verdict": {
+      "enum": [
+        "verified",
+        "contradicted",
+        "cant_check"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schema_major",
+    "checker_version",
+    "comparison_rule",
+    "claim",
+    "evidence",
+    "verdict",
+    "reason"
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "verdict": {
+          "const": "verified"
+        },
+        "reason": {
+          "enum": [
+            "quote_found"
+          ]
+        },
+        "evidence": {
+          "required": [
+            "object_format",
+            "observed_commit",
+            "blob_id",
+            "lines"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "verdict": {
+          "const": "contradicted"
+        },
+        "reason": {
+          "enum": [
+            "quote_absent"
+          ]
+        },
+        "evidence": {
+          "required": [
+            "object_format",
+            "observed_commit",
+            "blob_id"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "verdict": {
+          "const": "contradicted"
+        },
+        "reason": {
+          "enum": [
+            "path_absent"
+          ]
+        },
+        "evidence": {
+          "required": [
+            "object_format",
+            "observed_commit",
+            "tree_id",
+            "missing_component"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "verdict": {
+          "const": "cant_check"
+        },
+        "reason": {
+          "enum": [
+            "repository_unavailable",
+            "revision_unavailable",
+            "object_unavailable",
+            "unsupported_storage",
+            "unsupported_kind",
+            "unsupported_content",
+            "resource_limit"
+          ]
+        },
+        "evidence": {
+          "required": []
+        }
+      }
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "enum": [
+              "contradicted",
+              "cant_check"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evidence": {
+            "not": {
+              "required": [
+                "lines"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

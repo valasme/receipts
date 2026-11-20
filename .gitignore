@@ -1,3 +1,6 @@
 /dist/
 /receipts
 /receipts.exe
+
+__pycache__/
+/receipts-test.exe

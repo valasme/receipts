@@ -46,6 +46,9 @@ type Receipt struct {
 func normalize(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
 
 func Validate(rev, path string) error {
+	if len(rev) == 64 {
+		return errors.New("SHA-256 repositories are unsupported; supply a SHA-1 commit ID")
+	}
 	if len(rev) != 40 {
 		return errors.New("supply a full 40-digit commit ID")
 	}
@@ -74,10 +77,31 @@ func Verify(ctx context.Context, repo, rev, path string, quote []byte, version s
 	rev = strings.ToLower(rev)
 	digest := sha256.Sum256(quote)
 	r := Receipt{Schema: 1, Version: version, Rule: "utf8-crlf-to-lf-v1", Claim: Claim{"exact_source_quote", rev, path, hex.EncodeToString(digest[:])}, Verdict: "cant_check", Reason: "revision_unavailable"}
+	// A blocking filesystem read can outlive a cooperative deadline. This
+	// process serves one check; return the inconclusive receipt on time.
+	type result struct {
+		receipt Receipt
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() { checked, err := inspect(ctx, repo, r, quote); done <- result{checked, err} }()
+	select {
+	case completed := <-done:
+		if ctx.Err() != nil {
+			return unresolved(r, errLimit), nil
+		}
+		return completed.receipt, completed.err
+	case <-ctx.Done():
+		return unresolved(r, errLimit), nil
+	}
+}
+
+func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt, error) {
+	rev, path := r.Claim.Revision, r.Claim.Path
 	s, err := openStore(ctx, repo)
 	if err != nil {
 		r.Reason = "repository_unavailable"
-		return r, nil
+		return unresolved(r, err), nil
 	}
 	defer s.root.Close()
 	commit, err := s.read(rev)

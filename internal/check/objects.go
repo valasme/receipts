@@ -48,6 +48,11 @@ func openStore(ctx context.Context, path string) (*store, error) {
 		}
 		root = child
 	}
+	info, err := root.Stat("objects")
+	if err != nil || !info.IsDir() {
+		root.Close()
+		return nil, errObject
+	}
 	return &store{root, ctx, 32 << 20}, nil
 }
 
@@ -122,6 +127,10 @@ func (s *store) read(id string) (object, error) {
 
 // Read bounded v2 indexes. Always verify the reconstructed object's identity.
 func (s *store) packed(id string) (object, error) {
+	info, err := s.root.Stat("objects/pack")
+	if err != nil || !info.IsDir() {
+		return object{}, errObject
+	}
 	dir, err := s.root.Open("objects/pack")
 	if err != nil {
 		return object{}, errObject

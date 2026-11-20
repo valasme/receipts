@@ -1,30 +1,41 @@
 # Receipts
 
-Receipts is a planned open-source CLI for maintainers who want to check a factual statement in a pull request or report. Each finding will identify the claim, the revision checked, the verdict, and where a reader can inspect the evidence.
+Check whether an exact quotation appears in a source file at a particular Git commit. Receipts reads local Git objects and returns the evidence for one claim. Your working copy can contain newer, uncommitted edits.
 
-## Run the starter
+## Install and run
 
-From this checkout with Go 1.25 or newer installed, run:
+From a checkout with Go 1.25 or newer, run `go install ./cmd/receipts`. Put your Go binary directory on PATH. For an archive, verify its checksum against the release manifest, extract it and run the included executable directly. On Windows use `.\receipts.exe --help`. On Linux or macOS use `./receipts --help`. To remove an archive installation, delete the extracted files. To switch versions, keep each extraction in its own directory and select the desired binary.
+
+From the root of the Receipts repository, this POSIX example checks the README heading:
 
 ```sh
-go run ./cmd/receipts --help
-go run ./cmd/receipts --version
-go test ./...
+printf %s '# Receipts' > excerpt.txt
+receipts check --repo . --rev "$(git rev-parse HEAD)" --path README.md --quote-file excerpt.txt
 ```
 
-To install the development CLI from this checkout, run `go install ./cmd/receipts` and add your Go binary directory to PATH. The starter supports help and version output. The first claim checker is in planning.
+PowerShell:
 
-The [planning index](docs/planning/README.md) links the full specification, receipt examples, milestone tickets and review inventory.
+```powershell
+[IO.File]::WriteAllText("$PWD/excerpt.txt", '# Receipts')
+receipts check --repo . --rev (git rev-parse HEAD) --path README.md --quote-file excerpt.txt
+```
 
-## First milestone proposal
+Use a full SHA-1 commit ID, a repository-root-relative path and UTF-8 input. Pass `--quote-file -` for stdin. A final newline is significant. CRLF and LF match. Other whitespace, letter case and Unicode composition remain significant.
 
-1. Check a single explicitly supplied claim against a local repository and pinned commit. A good first case is “this exact quotation appears in this file.” Record the path, commit, and matching lines so a maintainer can repeat the check.
-2. Exercise all three verdicts on a small fixture repository. An exact quote found in the named file is verified. A complete search of that file can contradict an exact-quote claim. An unavailable revision yields can't check. Include case-sensitive paths and line endings in the fixtures.
-3. Render the same receipt as JSON and as a short Markdown comment. Pilot with maintainers using existing submissions and measure both time saved and incorrect contradictions before automating publication.
-4. Integrate the proven checker with GitHub. On edits, refresh one comment for the current submission and revision. Keep private reports local. Add optional claim extraction after the receipt format works end to end.
+## Read the result
 
-## Distribution
+**Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.
 
-The test workflow runs on Linux, macOS, and Windows. A version tag triggers GoReleaser to build amd64 and arm64 archives for each OS and publish them to GitHub Releases with SHA-256 checksums. A local packaging rehearsal uses `goreleaser release --snapshot --clean`. Package-manager installers and platform signing are future release work.
+Text is the default. Use `--format markdown` for a pasteable block and `--format json` for schema-major-1 output. All three verdicts exit 0. Invalid inputs exit 2. Output failures exit 1. Check both the exit status and complete JSON before using a receipt. A receipt can reveal a private path or guessable quote digest.
 
-Licensed under [Apache-2.0](LICENSE).
+## Supported storage and limits
+
+Use a regular local clone or bare SHA-1 repository. Receipts reads loose objects, v2 indexes, packed objects and bounded offset deltas. Reference deltas, alternate object databases and linked worktree indirections may return an inconclusive receipt. Symlinks, submodules, LFS pointers and binary source are unsupported. Reads never invoke Git or execute submitted code. The checker accepts a 64 KiB normalized quote, an 8 MiB source and up to 128 path components. Conservative limits on index bytes, total decoded bytes and a five-second object lookup deadline also apply.
+
+## Contribute and report problems
+
+For development, run `go test ./...`, `go vet ./...`, build the executable with `go build -o receipts-test.exe ./cmd/receipts`, and run `python tests/acceptance.py ./receipts-test.exe`, `python tests/storage.py ./receipts-test.exe` and `python tests/evaluate.py ./receipts-test.exe`. Test fixtures use Git and Python 3. The installed binary has no such dependencies. For a verdict change, include a synthetic repository, exact inputs and independently inspected expected result.
+
+Report an ordinary bug with the version, OS, exit code and a small synthetic fixture. Use the private security channel for sensitive issues. Support is best effort. [Issue tracker](https://github.com/valasme/receipts/issues) · [Private security report](https://github.com/valasme/receipts/security/advisories/new) · [Project plan](https://github.com/valasme/receipts/tree/main/docs/planning)
+
+Apache-2.0. The license is included with each archive.
