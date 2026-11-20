@@ -12,14 +12,28 @@ on:
         type: string
 permissions:
   contents: read
-concurrency:
-  group: receipt-pilot-${{ github.event.issue.number || github.event.pull_request.number || inputs.submission }}
-  cancel-in-progress: false
-env:
-  SUBMISSION: ${{ github.event.issue.number || github.event.pull_request.number || inputs.submission }}
 jobs:
-  preview:
+  identify:
     if: github.repository == 'valasme/receipts' && !github.event.repository.private && vars.RECEIPTS_PREVIEW == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      submission: ${{ steps.identity.outputs.submission }}
+    steps:
+      - id: identity
+        shell: bash
+        env:
+          SUBMISSION: ${{ github.event.issue.number || github.event.pull_request.number || inputs.submission }}
+        run: |
+          if [[ ! "$SUBMISSION" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo 'Supply the canonical decimal submission number.' >&2
+            exit 2
+          fi
+          printf 'submission=%s\n' "$SUBMISSION" >> "$GITHUB_OUTPUT"
+  preview:
+    needs: identify
+    env:
+      SUBMISSION: ${{ needs.identify.outputs.submission }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -41,7 +55,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
   publish:
-    needs: preview
+    needs: [identify, preview]
+    concurrency:
+      group: receipt-pilot-${{ needs.identify.outputs.submission }}
+      cancel-in-progress: false
+    env:
+      SUBMISSION: ${{ needs.identify.outputs.submission }}
     if: vars.RECEIPTS_PUBLISH == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
