@@ -1,0 +1,350 @@
+[
+  {
+    "split": "development",
+    "family": "notes",
+    "path": "atlas.md",
+    "source": "North\n\nSouth  \nEast\tWest\n",
+    "cases": [
+      [
+        "atlas.md",
+        "North",
+        "verified"
+      ],
+      [
+        "atlas.md",
+        "\n\n",
+        "verified"
+      ],
+      [
+        "atlas.md",
+        "East\tWest",
+        "verified"
+      ],
+      [
+        "atlas.md",
+        "South  \n",
+        "verified"
+      ],
+      [
+        "atlas.md",
+        "north",
+        "contradicted"
+      ],
+      [
+        "atlas.md",
+        "South\n",
+        "contradicted"
+      ],
+      [
+        "atlas.md",
+        "East West",
+        "contradicted"
+      ],
+      [
+        "bin",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "link",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "ptr",
+        "anything",
+        "cant_check"
+      ]
+    ]
+  },
+  {
+    "split": "development",
+    "family": "config",
+    "path": "runtime.ini",
+    "source": "[mode]\r\nname=Δ\r\nlimit=20",
+    "cases": [
+      [
+        "runtime.ini",
+        "[mode]\nname",
+        "verified"
+      ],
+      [
+        "runtime.ini",
+        "Δ\nlimit",
+        "verified"
+      ],
+      [
+        "runtime.ini",
+        "limit=20",
+        "verified"
+      ],
+      [
+        "runtime.ini",
+        "LIMIT=20",
+        "contradicted"
+      ],
+      [
+        "runtime.ini",
+        "20\n",
+        "contradicted"
+      ],
+      [
+        "runtime.ini",
+        "name = Δ",
+        "contradicted"
+      ],
+      [
+        "runtime.ini",
+        "[modes]",
+        "contradicted"
+      ],
+      [
+        "bin",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "dir",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "ptr",
+        "anything",
+        "cant_check"
+      ]
+    ]
+  },
+  {
+    "split": "development",
+    "family": "code",
+    "path": "sample.go",
+    "source": "package msg\n// café\nfunc ID() int { return 3 }\n",
+    "cases": [
+      [
+        "sample.go",
+        "// café",
+        "verified"
+      ],
+      [
+        "sample.go",
+        "ID() int",
+        "verified"
+      ],
+      [
+        "sample.go",
+        "return 3",
+        "verified"
+      ],
+      [
+        "sample.go",
+        "return 2",
+        "contradicted"
+      ],
+      [
+        "sample.go",
+        "café",
+        "contradicted"
+      ],
+      [
+        "sample.go",
+        "int{return",
+        "contradicted"
+      ],
+      [
+        "bin",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "dir",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "ptr",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "link",
+        "anything",
+        "cant_check"
+      ]
+    ]
+  },
+  {
+    "split": "holdout",
+    "family": "catalog",
+    "path": "list.csv",
+    "source": "key,value\nk,\"two,parts\"\r\nend,0",
+    "cases": [
+      [
+        "list.csv",
+        "\"two,parts\"",
+        "verified"
+      ],
+      [
+        "list.csv",
+        "parts\"\nend",
+        "verified"
+      ],
+      [
+        "list.csv",
+        "end,0",
+        "verified"
+      ],
+      [
+        "list.csv",
+        "key,v",
+        "verified"
+      ],
+      [
+        "list.csv",
+        "two parts",
+        "contradicted"
+      ],
+      [
+        "list.csv",
+        "End,0",
+        "contradicted"
+      ],
+      [
+        "list.csv",
+        "end,0\n",
+        "contradicted"
+      ],
+      [
+        "bin",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "dir",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "ptr",
+        "anything",
+        "cant_check"
+      ]
+    ]
+  },
+  {
+    "split": "holdout",
+    "family": "verse",
+    "path": "verse.txt",
+    "source": "﻿wind\rwind\nwind\n雪。\n",
+    "cases": [
+      [
+        "verse.txt",
+        "﻿wind",
+        "verified"
+      ],
+      [
+        "verse.txt",
+        "\rwind\n",
+        "verified"
+      ],
+      [
+        "verse.txt",
+        "雪。\n",
+        "verified"
+      ],
+      [
+        "verse.txt",
+        "wind wind",
+        "contradicted"
+      ],
+      [
+        "verse.txt",
+        "雪.",
+        "contradicted"
+      ],
+      [
+        "verse.txt",
+        "wind\nwind\nwind",
+        "contradicted"
+      ],
+      [
+        "verse.txt",
+        "WIND",
+        "contradicted"
+      ],
+      [
+        "dir",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "link",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "ptr",
+        "anything",
+        "cant_check"
+      ]
+    ]
+  },
+  {
+    "split": "holdout",
+    "family": "script",
+    "path": "build.sh",
+    "source": "#!/bin/sh\nset -eu\nprintf '%s\\n' \"ok\"\n",
+    "cases": [
+      [
+        "build.sh",
+        "#!/bin/sh\n",
+        "verified"
+      ],
+      [
+        "build.sh",
+        "set -eu",
+        "verified"
+      ],
+      [
+        "build.sh",
+        "%s\\n",
+        "verified"
+      ],
+      [
+        "build.sh",
+        "printf '%s\n'",
+        "contradicted"
+      ],
+      [
+        "build.sh",
+        "set -ue",
+        "contradicted"
+      ],
+      [
+        "build.sh",
+        "echo ok",
+        "contradicted"
+      ],
+      [
+        "dir",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "bin",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "ptr",
+        "anything",
+        "cant_check"
+      ],
+      [
+        "link",
+        "anything",
+        "cant_check"
+      ]
+    ]
+  }
+]
