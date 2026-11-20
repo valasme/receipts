@@ -89,8 +89,9 @@ def packed_candidates(repo):
         input=(objects + "\n").encode(), env=env, check=True, stdout=subprocess.DEVNULL,
     )
     for old in indexes:
-        old.unlink()
-        old.with_suffix(".pack").unlink()
+        for path in (old, old.with_suffix(".pack")):
+            path.chmod(0o600)
+            path.unlink()
     git(repo, "prune-packed")
     idx = next(packdir.glob("*.idx"))
     assert idx.stat().st_size > 3 << 20
@@ -113,6 +114,7 @@ def packed_candidates(repo):
     for i in range(300):
         (packdir / f"auxiliary-{i:04d}").touch()
     assert check(repo, rev, "item", b"sample")["verdict"] == "verified"
+    valid_idx.chmod(0o600)
     valid_idx.unlink()
     assert check(repo, rev, "item", b"sample")["reason"] == "unsupported_storage"
 
