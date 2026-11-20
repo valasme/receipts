@@ -132,7 +132,9 @@ class Installer:
             raise ValueError(f"Unknown installer channel: {channel}")
         self.owned_paths = {self.binary}
         if self.alias:
-            self.owned_paths.add(self.alias)
+            self.owned_paths.update(
+                self.alias.with_suffix(suffix) for suffix in (".exe", ".shim", ".ps1", ".cmd")
+            )
         if self.license:
             self.owned_paths.update({self.license, self.license.with_name(NOTICES)})
 
@@ -248,10 +250,15 @@ class Installer:
         with tempfile.TemporaryDirectory(dir=self.root) as directory:
             expected = extract_native(bundle, TARGET, ARCH, Path(directory))
             qualify(self.binary, bundle.version, expected=expected, alias=self.alias)
-            if self.license and bundle.record["source_tag"] != HISTORICAL_WITHOUT_NOTICES:
+            self.owned_paths.add(self.binary.resolve(strict=True))
+            if self.license:
                 for published, installed in [
                     ("LICENSE", self.license), (NOTICES, self.license.with_name(NOTICES)),
                 ]:
+                    if bundle.record["source_tag"] == HISTORICAL_WITHOUT_NOTICES:
+                        if installed.is_file():
+                            self.owned_paths.add(installed.resolve(strict=True))
+                        continue
                     if installed.read_bytes() != expected.with_name(published).read_bytes():
                         raise ValueError(f"Installed notice differs: {installed}")
                     self.owned_paths.add(installed.resolve(strict=True))

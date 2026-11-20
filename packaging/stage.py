@@ -87,7 +87,8 @@ class GitHub:
         self.gh(
             f"upload {path.name} to draft {release_id}", "api", "--method", "POST",
             f"https://uploads.github.com/{self.endpoint}/releases/{release_id}/assets?name={path.name}",
-            "-H", "Content-Type: application/octet-stream", "--input", str(path),
+            "-H", "Content-Type: application/octet-stream",
+            "-H", f"Content-Length: {path.stat().st_size}", "--input", str(path),
         )
 
     def download(self, asset_id, target):
@@ -279,7 +280,7 @@ def main():
         release_id, checksum = stage(github, args.tag, args.commit, args.workflow, args.bundle, args.notes)
         if "GITHUB_STEP_SUMMARY" in os.environ:
             with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-                print(f"Reviewed release inputs for `{args.tag}`: draft `{release_id}`, "
+                print(f"Candidate for `{args.tag}`: draft `{release_id}`, "
                       f"checksums.txt SHA-256 `{checksum}`.", file=summary)
         print(f"Release {release_id}, checksums.txt SHA-256 {checksum}")
     elif args.mode == "promote":

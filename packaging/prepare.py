@@ -66,6 +66,8 @@ def installer_manifests(out, version, assets):
 
     website = "https://github.com/valasme/receipts"
     formula = [
+        'require "shellwords"',
+        "",
         "class Receipts < Formula",
         '  desc "Check a quotation against a Git commit"',
         f'  homepage "{website}"',

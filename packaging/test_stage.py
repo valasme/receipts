@@ -15,7 +15,7 @@ from bundle import (
     read_manifest, release_assets, verify_bundle,
 )
 from prepare import prepare
-from stage import GitHub, promote, resolve_source, stage
+from stage import GitHub, promote, public, resolve_source, stage
 from toolchain import release_binaries
 
 TAG = "v0.2.0-pre.1"
@@ -63,6 +63,9 @@ class FakeRelease:
     def release(self, release_id):
         if release_id != 42:
             raise ValueError("wrong release identity")
+        return self.data.copy()
+
+    def public_release(self, tag):
         return self.data.copy()
 
     def assets(self, release_id):
@@ -174,6 +177,35 @@ class DraftRecovery(unittest.TestCase):
         self.assertEqual(self.github.mutations, [("publish", 42)])
         self.assertEqual(self.github.attestations, [(MANIFEST, WORKFLOW), (RECORD, WORKFLOW)])
 
+    def test_competing_candidate_cannot_change_the_staged_snapshot(self):
+        release_id, checksum = self.stage()
+        alternate = fixture(self.root / "alternate")
+        (alternate / "preview-installers.zip").write_text("second candidate")
+        manifest(alternate)
+        with self.assertRaisesRegex(ValueError, "differs from the candidate"):
+            stage(self.github, TAG, COMMIT, WORKFLOW, alternate, self.root / "notes")
+        self.assertEqual(len(self.github.mutations), 13)
+        self.assertEqual(self.stage(), (release_id, checksum))
+
+    def test_public_bundle_checks_pins_and_file_membership(self):
+        _, checksum = self.stage()
+        self.github.data["draft"] = False
+        for tag, commit, manifest_hash, workflow, error in (
+            ("v9.0.0-preview", COMMIT, checksum, WORKFLOW, "Expected a prerelease"),
+            (TAG, WORKFLOW, checksum, WORKFLOW, "different commit"),
+            (TAG, COMMIT, "f" * 64, WORKFLOW, "approved candidate"),
+            (TAG, COMMIT, checksum, COMMIT, "Unexpected workflow commit"),
+        ):
+            with self.subTest(error=error):
+                with self.assertRaisesRegex(ValueError, error):
+                    public(self.github, tag, self.root / f"public-{error}",
+                           commit=commit, checksum=manifest_hash, workflow=workflow)
+        retrieved = public(
+            self.github, TAG, self.root / "public", commit=COMMIT,
+            checksum=checksum, workflow=WORKFLOW,
+        )
+        self.assertEqual(retrieved.hashes[MANIFEST], checksum)
+
     def test_paginated_duplicate_trailing_asset(self):
         github = GitHub("org/repo")
         self.stage()
@@ -229,8 +261,10 @@ class DraftRecovery(unittest.TestCase):
             os.chdir(saved)
 
 
-def archive(path, exe, *, mode=0o751, extra=None):
+def archive(path, exe, *, mode=0o751, extra=None, symlink=False):
     members = [(exe, b"fixture"), ("LICENSE", b"license"), ("README.md", b"README"), (NOTICES, b"notice")]
+    if symlink:
+        members[0] = (exe, None)
     if extra:
         members.append(extra)
     if path.suffix == ".zip":
@@ -306,6 +340,7 @@ class PrepareBundle(unittest.TestCase):
                 ({"mode": 0o640}, "execute permission"),
                 ({"extra": ("receipts", b"duplicate")}, "duplicate"),
                 ({"extra": ("extra", None)}, "Unexpected"),
+                ({"symlink": True}, "regular tar member"),
             ]:
                 archive(path, "receipts", **options)
                 manifest(bundle)

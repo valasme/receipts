@@ -14,6 +14,11 @@ from bundle import HISTORICAL_WITHOUT_NOTICES, extract_native, verify_bundle
 
 def smoke(root, source, *, tag, commit, workflow=None):
     bundle = verify_bundle(root, tag=tag, commit=commit, workflow=workflow)
+    revision = subprocess.check_output(
+        ["git", "-C", source, "rev-parse", "--verify", "HEAD"], text=True, timeout=20,
+    ).strip()
+    if revision != commit:
+        raise ValueError(f"Archived test source is {revision}, expected {commit}")
     system, arch = native_target()
     with tempfile.TemporaryDirectory() as directory:
         dest = Path(directory)
