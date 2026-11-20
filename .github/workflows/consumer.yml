@@ -31,7 +31,10 @@ jobs:
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir bundle
-          gh attestation verify bundle/checksums.txt --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$TAG"
+          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
+          jq -e --arg tag "$TAG" --arg commit "$commit" '.source_tag == $tag and .source_commit == $commit' bundle/build-record.json
+          gh attestation verify bundle/build-record.json --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-digest "$(jq -r .workflow_commit bundle/build-record.json)"
+          gh attestation verify bundle/checksums.txt --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-digest "$(jq -r .workflow_commit bundle/build-record.json)"
       - run: python tests/package_smoke.py bundle
         env:
           RECEIPTS_NATIVE_ARCH: ${{ runner.arch }}

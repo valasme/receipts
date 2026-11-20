@@ -1,13 +1,26 @@
 name: Release
 on:
   workflow_dispatch:
+    inputs:
+      candidate_tag:
+        description: Existing source tag to rebuild (empty for a snapshot)
+        type: string
+        required: false
+      publish_limited:
+        description: Publish an explicitly unsigned limited prerelease after validation
+        type: boolean
+        default: false
   push:
     tags: ['v*']
 permissions:
   contents: read
+env:
+  SOURCE_TAG: ${{ inputs.candidate_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
 jobs:
   validate:
     uses: ./.github/workflows/test.yml
+    with:
+      revision: ${{ inputs.candidate_tag || github.sha }}
 
   package:
     needs: validate
@@ -20,18 +33,36 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
-          go-version-file: go.mod
+          go-version: 1.27.4
           cache: false
       - name: Validate tag
-        if: github.ref_type == 'tag'
+        if: env.SOURCE_TAG != ''
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          [[ "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          git checkout --detach "refs/tags/$SOURCE_TAG"
           git merge-base --is-ancestor HEAD origin/main
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de
         with:
           version: v2.20.3
-          args: release --clean --skip=publish ${{ github.ref_type != 'tag' && '--snapshot' || '' }}
+          args: release --clean --skip=publish ${{ env.SOURCE_TAG == '' && '--snapshot' || '' }}
+      - name: Check the binaries built by the release compiler
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          for binary in dist/receipts_*/*; do
+            "$(go env GOPATH)/bin/govulncheck" -mode=binary "$binary"
+          done
       - run: python packaging/prepare.py dist bundle
+      - name: Bind tagged source and compiler to the attested bundle
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, subprocess
+          record = {"source_commit": subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
+                    "source_tag": os.environ["SOURCE_TAG"], "workflow_commit": os.environ["GITHUB_SHA"],
+                    "compiler": subprocess.check_output(["go","version"],text=True).strip()}
+          path = pathlib.Path("bundle/build-record.json")
+          path.write_text(json.dumps(record,sort_keys=True)+"\n")
+          with open("bundle/checksums.txt","a") as checks:
+              print(hashlib.sha256(path.read_bytes()).hexdigest(),path.name,sep="  ",file=checks)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: candidate
@@ -76,7 +107,7 @@ jobs:
           Write-Output 'WinGet unavailable on this runner.'
   draft:
     needs: install
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || (github.ref == 'refs/heads/main' && inputs.candidate_tag != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -91,8 +122,23 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: bundle/*
+          create-storage-record: false
+      - name: Write limited preview notes
+        run: |
+          cat > "$RUNNER_TEMP/preview-notes" <<'NOTES'
+          Offline exact-quotation checker for Linux, macOS and Windows on amd64 and arm64. Download the archive for your OS, verify its checksum and provenance, extract it and run receipts --help. All six packaged binaries passed native tests on the frozen 60-case corpus.
+
+          This is an unsigned limited preview. macOS Developer ID signing/notarization and Windows Authenticode are unavailable. The release includes GitHub build attestations and a build record identifying the tagged source, compiler and build workflow. Verify checksums.txt with gh attestation verify against valasme/receipts before trusting its hashes.
+
+          Linux deb/rpm packages and experimental Homebrew, Scoop and WinGet manifests are included. Stable package indexes and live PR comments are outside this preview. A completed receipt can be Verified, Contradicted or Can't check. The verdict applies to the supplied quotation only.
+          NOTES
       - name: Stage a prerelease for owner review
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" bundle/* --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease --latest=false --title "Receipts $GITHUB_REF_NAME" --notes "Offline source quotation checker. Verify artifact provenance and review platform signing status before installation."
+          gh release create "$SOURCE_TAG" bundle/* --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease --latest=false --title "Receipts $SOURCE_TAG · unsigned limited preview" --notes-file "$RUNNER_TEMP/preview-notes"
+      - name: Publish approved limited preview
+        if: github.ref == 'refs/heads/main' && inputs.publish_limited
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
