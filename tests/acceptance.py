@@ -13,6 +13,13 @@ env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
            GIT_COMMITTER_NAME="Fixture", GIT_COMMITTER_EMAIL="test@example.invalid",
            GIT_AUTHOR_DATE="2025-01-01T00:00:00Z", GIT_COMMITTER_DATE="2025-01-01T00:00:00Z")
 
+validator = None
+if os.getenv("RECEIPTS_VALIDATE_SCHEMA") == "1":
+    from jsonschema import Draft202012Validator
+    schema = json.loads((Path(__file__).resolve().parents[1]/"schema/receipt-v1.json").read_text())
+    Draft202012Validator.check_schema(schema)
+    validator = Draft202012Validator(schema)
+
 def git(repo, *args):
     return subprocess.check_output(["git", "-C", str(repo), *args], env=env).strip().decode()
 
@@ -24,7 +31,12 @@ def check(repo, rev, path, quote, fmt="json", expected=0):
         assert not p.stdout and p.stderr
         return
     assert not p.stderr
-    return json.loads(p.stdout) if fmt == "json" else p.stdout.decode()
+    if fmt != "json":
+        return p.stdout.decode()
+    receipt = json.loads(p.stdout)
+    if validator:
+        validator.validate(receipt)
+    return receipt
 
 def suite(repo, packed):
     git(repo, "init", "-q", "--object-format=sha1")

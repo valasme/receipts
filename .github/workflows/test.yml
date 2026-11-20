@@ -29,3 +29,28 @@ jobs:
       - run: python tests/storage.py ./receipts-test.exe
       - run: python tests/evaluate.py ./receipts-test.exe
       - run: go run ./cmd/receipts --version
+  diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: test -z "$(gofmt -l cmd internal)"
+      - run: go test -race ./...
+      - run: go test ./internal/check -run '^$' -fuzz '^FuzzLookup$' -fuzztime=5s
+      - run: go test ./internal/check -run '^$' -fuzz '^FuzzDelta$' -fuzztime=5s
+      - run: python -m unittest discover -s pilot -v
+      - name: Validate actual receipts against the versioned schema
+        run: |
+          python -m venv "$RUNNER_TEMP/schema"
+          "$RUNNER_TEMP/schema/bin/pip" install jsonschema==4.25.1
+          go build -o receipts-test.exe ./cmd/receipts
+          "$RUNNER_TEMP/schema/bin/python" tests/acceptance.py ./receipts-test.exe
+          "$RUNNER_TEMP/schema/bin/python" tests/evaluate.py ./receipts-test.exe
+        env:
+          RECEIPTS_VALIDATE_SCHEMA: '1'

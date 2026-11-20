@@ -1,0 +1,65 @@
+name: Receipts public pilot
+on:
+  issues:
+    types: [opened, edited, reopened, labeled, closed]
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, labeled, closed]
+  workflow_dispatch:
+    inputs:
+      submission:
+        description: Public demo issue or PR number
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: receipt-pilot-${{ github.event.issue.number || github.event.pull_request.number || inputs.submission }}
+  cancel-in-progress: false
+env:
+  SUBMISSION: ${{ github.event.issue.number || github.event.pull_request.number || inputs.submission }}
+jobs:
+  preview:
+    if: github.repository == 'valasme/receipts' && !github.event.repository.private && vars.RECEIPTS_PREVIEW == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go build -o receipts-pilot ./cmd/receipts
+      - run: python pilot/github.py preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+  publish:
+    needs: preview
+    if: vars.RECEIPTS_PUBLISH == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go build -o receipts-pilot ./cmd/receipts
+      - run: python pilot/github.py publish
+        env:
+          GH_TOKEN: ${{ github.token }}
