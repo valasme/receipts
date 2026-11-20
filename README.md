@@ -97,6 +97,16 @@ Run `receipts check --repo . --batch-file batch.json`. The output is a JSON obje
 
 The single-claim input limit is 768 KiB. A batch can contain 1–16 claims, with at most 1 MiB of input and a shared five-second lookup budget. Use the exact JSON field names and include each field once. Existing path and quote limits apply to each claim. See the [working agent example](examples/agent/README.md) for a PR-to-receipt walkthrough.
 
+## Preview a submission locally
+
+Save the PR or issue body as `submission.md` and its [claim proposal](examples/agent/proposal.json) as `proposal.json`. With the development build, run this from a local clone after replacing `COMMIT` with the full commit ID:
+
+```sh
+receipts review --submission submission.md --proposal proposal.json --rev COMMIT
+```
+
+The preview shows where each checked quote or unresolved statement appears in the submission. Each quote also shows its citation and Git evidence. A proposal whose source lines or text disagree with the submission returns an input error. Review the proposal and the surrounding submission text for context. Run `python examples/agent/replay.py ./receipts-demo.exe` with a development binary to try the worked example.
+
 ## Read the result
 
 **Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.

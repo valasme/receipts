@@ -4,6 +4,7 @@
 
 | Read this | Decision it supports |
 | --- | --- |
+| [Local review preview](review-preview.md) | How maintainers tie claim proposals and receipts back to a submission |
 | [Local agent workflow](agent-workflow.md) · [tracked spec](https://github.com/valasme/receipts/issues/18) | How agents propose and replay exact quotations in a local clone |
 | [Product and engineering spec](spec.md) · [tracked spec](https://github.com/valasme/receipts/issues/1) | What the owner can promise, how to prove it, and when to ship |
 | [Walk through four receipt surfaces](receipt-examples.md) | What a contributor sees in success, mismatch, unresolved and export flows |

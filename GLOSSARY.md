@@ -11,3 +11,5 @@ Maintainers use a receipt to review the factual statements in a submission.
 **Receipt** — An itemized record of claims, their verdicts, and the evidence or missing information behind each verdict.
 
 **Claim proposal** — A candidate claim taken from a submission before Receipts checks its evidence. A proposal can leave some statements unresolved.
+
+**Review preview** — A view that connects receipts and unresolved statements to their locations in one submission.

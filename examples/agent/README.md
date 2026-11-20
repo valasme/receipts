@@ -9,7 +9,7 @@ go build -o receipts-demo.exe ./cmd/receipts
 python examples/agent/replay.py ./receipts-demo.exe
 ```
 
-The replay script creates a temporary Git repository, supplies the pinned commit and turns the proposed quotations into a batch. It compares each completed receipt to a saved single-claim replay and independently inspects the committed blobs with Git. The three verdicts should be `verified`, `contradicted` and `cant_check`. The speed claim remains unresolved. This run uses synthetic data and requires Go, Git and Python 3. It works offline.
+The replay script creates a temporary Git repository and supplies the pinned commit to `receipts review`. The preview links the original citation and submission lines to each receipt. It shows the speed claim as unresolved. The script then runs the quotations as a batch, compares each completed receipt to a saved single-claim replay and independently inspects the committed blobs with Git. The three verdicts should be `verified`, `contradicted` and `cant_check`. This run uses synthetic data and requires Go, Git and Python 3. It works offline.
 
 ## Try another agent
 
