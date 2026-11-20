@@ -47,4 +47,4 @@ For development, run `go test ./...`, `go vet ./...`, build the executable with 
 
 Report an ordinary bug with the version, OS, exit code and a small synthetic fixture. Use the private security channel for sensitive issues. Support is best effort. [Issue tracker](https://github.com/valasme/receipts/issues) · [Private security report](https://github.com/valasme/receipts/security/advisories/new) · [Project plan](https://github.com/valasme/receipts/tree/main/docs/planning)
 
-Apache-2.0. The license is included with each archive.
+Receipts uses Apache-2.0. Builds after the first preview include an offline copy of the project license and third-party notices in the executable. Run `receipts --licenses` to read them. [Project license](LICENSE) · [Third-party notices](THIRD-PARTY-NOTICES.txt)

@@ -9,6 +9,7 @@ builds:
     ldflags: [-s, -w, "-X main.version={{ .Version }}"]
 archives:
   - formats: [tar.gz]
+    files: [README.md, LICENSE, THIRD-PARTY-NOTICES.txt]
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -21,6 +22,19 @@ nfpms:
     description: Offline exact source quotation checker
     license: Apache-2.0
     formats: [deb, rpm]
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/receipts/copyright
+        packager: deb
+      - src: THIRD-PARTY-NOTICES.txt
+        dst: /usr/share/doc/receipts/THIRD-PARTY-NOTICES.txt
+        packager: deb
+      - src: LICENSE
+        dst: /usr/share/licenses/receipts/LICENSE
+        packager: rpm
+      - src: THIRD-PARTY-NOTICES.txt
+        dst: /usr/share/licenses/receipts/THIRD-PARTY-NOTICES.txt
+        packager: rpm
 release:
   draft: true
   prerelease: auto

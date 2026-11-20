@@ -34,3 +34,9 @@ With Go and its binary directory on PATH, you can install the pinned source modu
 The Go install reports `receipts v0.0.1-pre.1`. Release archives report `receipts 0.0.1-pre.1`.
 
 Linux deb and rpm packages are available on the same release. The optional `preview-installers.zip` contains `Formula/receipts.rb`, `bucket/receipts.json` and the multi-file `winget/` manifest. These work with a local Homebrew tap, a local Scoop manifest and WinGet's local-manifest feature. Their URLs point to the public release. Stable package-index registration remains outside this preview. The [consumer workflow](../.github/workflows/consumer.yml) gives the commands tested on each platform.
+
+## License notices in candidates after v0.0.1-pre.1
+
+Run `receipts --licenses` to read the Apache-2.0 license and the bundled third-party notices offline, including from a standalone executable or a Go installation. Archives contain both documents beside the binary. Debian installs them in `/usr/share/doc/receipts/` (the project license is named `copyright`). RPM uses `/usr/share/licenses/receipts/`. Homebrew uses the formula's `share/receipts/` directory. The first public preview predates this change.
+
+The candidate workflow installs the exact package bytes on each native runner. Homebrew, WinGet and Scoop receive the staged archive in their download caches so their manifest hash checks work before a public URL exists. The public-install workflow exercises downloads again after publication. When upgrading Go or adding a dependency, review the notices for every release target against the new sources. The notice file cites the upstream texts.

@@ -13,13 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/valasme/receipts"
 	"github.com/valasme/receipts/internal/check"
 )
 
 var version = "dev"
 
 const help = `Usage: receipts check --rev COMMIT --path PATH --quote-file FILE [--repo DIR] [--format FORMAT]
-       receipts --help | --version
+       receipts --help | --version | --licenses
 
 Check an exact source quotation in a committed file. Use a full SHA-1
 commit ID and a repository-relative path. The repository defaults to ".".
@@ -59,6 +60,9 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	}
 	if len(args) == 1 && args[0] == "--version" {
 		return deliver(stdout, stderr, "receipts "+buildVersion()+"\n")
+	}
+	if len(args) == 1 && args[0] == "--licenses" {
+		return deliver(stdout, stderr, receipts.LicenseText())
 	}
 	if args[0] != "check" {
 		fmt.Fprintln(stderr, "Unknown arguments. Run receipts --help for usage.")

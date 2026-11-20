@@ -59,9 +59,12 @@ def prepare(dist, out):
     formula += [
         "  def install",
         '    bin.install "receipts"',
+        '    pkgshare.install "LICENSE", "THIRD-PARTY-NOTICES.txt"',
         "  end",
         "  test do",
         '    assert_match version.to_s, shell_output("#{bin}/receipts --version")',
+        '    notices = (pkgshare/"LICENSE").read + "\\n" + (pkgshare/"THIRD-PARTY-NOTICES.txt").read',
+        '    assert_equal notices, shell_output("#{bin}/receipts --licenses")',
         "  end",
         "end",
     ]

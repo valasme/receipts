@@ -18,6 +18,21 @@ func TestFailedDelivery(t *testing.T) {
 	}
 }
 
+func TestLicenseNotices(t *testing.T) {
+	var out, diag strings.Builder
+	if code := run([]string{"--licenses"}, &out, &diag); code != 0 || diag.Len() != 0 {
+		t.Fatalf("license command exited %d with %q", code, diag.String())
+	}
+	for _, want := range []string{"Apache License", "Copyright 2009 The Go Authors.", "Vita Nuova", "Unicode, Inc."} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing notice %q", want)
+		}
+	}
+	if code := run([]string{"--licenses"}, failedOutput{}, io.Discard); code != 1 {
+		t.Fatalf("failed license delivery exited %d", code)
+	}
+}
+
 func TestCommands(t *testing.T) {
 	for _, tc := range []struct {
 		args []string

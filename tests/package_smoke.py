@@ -10,6 +10,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from installed_licenses import NOTICES, verify
+
 
 def smoke(bundle):
     system = {"Darwin": "darwin", "Linux": "linux", "Windows": "windows"}[
@@ -36,15 +38,19 @@ def smoke(bundle):
     exe = "receipts.exe" if system == "windows" else "receipts"
     with tempfile.TemporaryDirectory() as d:
         dest = Path(d) / exe
+        files = [exe, "LICENSE", NOTICES]
         if ext == "zip":
             with zipfile.ZipFile(archive) as z:
-                assert {exe, "LICENSE", "README.md"} <= set(z.namelist())
-                dest.write_bytes(z.read(exe))
+                assert "README.md" in z.namelist()
+                for name in files:
+                    (dest.parent / name).write_bytes(z.read(name))
         else:
             with tarfile.open(archive) as z:
-                assert {exe, "LICENSE", "README.md"} <= set(z.getnames())
-                dest.write_bytes(z.extractfile(exe).read())
+                assert "README.md" in z.getnames()
+                for name in files:
+                    (dest.parent / name).write_bytes(z.extractfile(name).read())
             dest.chmod(0o755)
+        verify(dest, dest.parent / "LICENSE")
         actual = subprocess.check_output([dest, "--version"], text=True).strip()
         assert actual == "receipts " + version, (actual, version)
         for script in ["acceptance.py", "storage.py", "golden.py", "evaluate.py"]:
