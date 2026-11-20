@@ -110,6 +110,18 @@ def suite(repo, packed):
             r["claim"]["quote_sha256"]
             == hashlib.sha256(quote.replace(b"\r\n", b"\n")).hexdigest()
         )
+        label = {
+            "verified": "Verified",
+            "contradicted": "Contradicted",
+            "cant_check": "Can't check",
+        }[verdict]
+        for fmt in ["text", "markdown"]:
+            human = check(repo, rev, path, quote, fmt)
+            assert human.strip().startswith(label) and reason in human and rev in human
+            for key in ("blob_id", "tree_id", "missing_component"):
+                if key in r["evidence"]:
+                    assert r["evidence"][key] in human
+        assert r == check(repo, rev, path, quote)
         if verdict == "verified":
             assert r["evidence"]["blob_id"] == blob
             assert r["evidence"]["lines"] == {"start": 2, "end": 3}
