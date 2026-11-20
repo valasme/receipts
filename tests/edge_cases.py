@@ -75,6 +75,8 @@ def suite(repo):
     for body in [
         tree_header + "\n",
         tree_header + "\nauthor missing-email\n" + rest,
+        *(tree_header + "\n" + required.replace("1735689600", date, 1) + "\n"
+          for date in ("01735689600", "9223372036854775808", "+1", "-1")),
         tree_header.upper().replace("TREE ", "tree ") + "\n" + rest,
         tree_header + "\nparent invalid\n" + required + "\n",
         tree_header + "\n" + required + "tree " + tree_header[5:] + "\n\n",
@@ -119,6 +121,9 @@ def suite(repo):
     args = [binary, "check", "--rev", rev, "--path", name, "--quote-file", "-"]
     nested = repo / "nested" / "deep"
     nested.mkdir(parents=True)
+    (nested / "HEAD").write_text("Application heading", encoding="utf-8")
+    (nested / "config").write_text("Application configuration", encoding="utf-8")
+    git(nested, "rev-parse", "--show-toplevel")
     r = subprocess.run(args, timeout=25, check=False, cwd=nested, input=b"aa", capture_output=True)
     assert r.returncode == 0 and r.stdout.startswith(b"Verified"), r
     r = subprocess.run(args + ["--repo", "."], timeout=25, check=False, cwd=nested, input=b"aa", capture_output=True)
@@ -185,6 +190,11 @@ def quote_witnesses(repo):
     pointer = raw_object(repo, "blob", b"\r\n".join([
         prefix, b"ext-0-sample " + oid, b"oid " + oid, b"size 3", b""
     ]))
+    alternate_pointers = {
+        "prerelease-pointer": b"version https://hawser.github.com/spec/v1",
+        "alpha-pointer": b"version http://git-media.io/v/2",
+        "extension-pointer": prefix + b"\n\next-0-UpperCase " + oid,
+    }
     marker = raw_object(repo, "blob", prefix + b"\nordinary text\n")
     empty_tree = raw_object(repo, "tree", b"")
     missing = "d" * 40
@@ -205,6 +215,9 @@ def quote_witnesses(repo):
         f"040000 tree {missing}\tunavailable-dir",
         f"160000 commit {submodule}\tmodule",
     ]
+    for path, header in alternate_pointers.items():
+        alternate = raw_object(repo, "blob", b"\n".join([header, b"oid " + oid, b"size 3", b""]))
+        entries.append(f"100644 blob {alternate}\t{path}")
     tree = subprocess.check_output(
         ["git", "-C", repo, "mktree", "--missing"],
         timeout=25, input=("\n".join(entries) + "\n").encode(), env=env,
@@ -220,7 +233,8 @@ def quote_witnesses(repo):
     check(repo, rev, "a:note", b"x", expected=2)
     assert check(repo, rev, "prose", b"marker")["verdict"] == "verified"
     assert check(repo, rev, "marker", b"ordinary text")["verdict"] == "verified"
-    assert check(repo, rev, "pointer", b"version")["reason"] == "unsupported_content"
+    for path in ("pointer", *alternate_pointers):
+        assert check(repo, rev, path, b"absent source")["reason"] == "unsupported_content"
     for path, component in [
         ("link", "link"), ("link/item", "link"), ("repeat", "repeat"),
         ("missing", "missing"), ("module", "module"),
@@ -296,6 +310,9 @@ def storage_selection(root):
     for path in [linked, separate]:
         r = check(path, rev, "item", b"original", "json-evidence")
         assert r["reason"] == "unsupported_storage" and "clone or bare" in r["detail"], r
+
+    internal = check(repo / ".git", rev, "item", b"original", "json-evidence")
+    assert internal["reason"] == "repository_unavailable" and "clone root" in internal["detail"], internal
 
     assert check(root, rev, "item", b"x")["reason"] == "repository_unavailable"
     assert check(root / "missing", rev, "item", b"x")["reason"] == "repository_unavailable"

@@ -17,11 +17,15 @@ VERDICTS = {"verified", "contradicted", "cant_check"}
 
 
 def trials():
+    rng = secrets.SystemRandom()
+    outcomes = {mode: ["verified"] * 4 + ["contradicted"] * 8 for mode in ("manual", "receipts")}
+    for assignments in outcomes.values():
+        rng.shuffle(assignments)
     for pair in range(PAIRS):
         order = ("manual", "receipts") if pair % 2 == 0 else ("receipts", "manual")
-        rows = secrets.SystemRandom().sample(range(24, 96), 2)
+        rows = rng.sample(range(24, 96), 2)
         for sequence, (mode, row) in enumerate(zip(order, rows), start=1):
-            yield pair + 1, sequence, mode, row
+            yield pair + 1, sequence, mode, row, outcomes[mode][pair]
 
 
 def summarize(results):
@@ -56,11 +60,10 @@ def record(path, report):
         Path(pending).unlink(missing_ok=True)
 
 
-def task(pair, sequence, mode, row, repo):
+def task(pair, sequence, mode, row, expected, repo):
     nonce = secrets.token_hex(4)
     name = f"catalog-{nonce}.txt"
     text = "".join(f"item-{i}-{nonce} = {i + pair}\n" for i in range(120))
-    expected = "verified" if pair % 3 == 1 else "contradicted"
     value = row + pair + (expected == "contradicted")
     quote = f"item-{row}-{nonce} = {value}\n"
 
@@ -87,12 +90,12 @@ def task(pair, sequence, mode, row, repo):
         )
         start = time.monotonic()
         answer = input("Complete the review, then enter verified, contradicted or cant_check: ").strip()
-        elapsed = time.monotonic() - start
         if answer not in VERDICTS:
             print("Discarded unrecognized verdict. This pair cannot qualify.")
             return {**observation, "status": "discarded"}
         observed_revision = input("Full commit ID observed in your check: ").strip()
         observed_blob = input("Full blob ID observed in your check: ").strip()
+        elapsed = time.monotonic() - start
     except (KeyboardInterrupt, EOFError):
         return observation
     return {
@@ -116,15 +119,15 @@ def main():
     os.close(fd)
     print(
         f"Use Git/manual inspection for manual trials and {args.binary} ({version}) for receipts trials. "
-        "Include finding the revision, preparing the quote and interpreting the result. "
-        "Keep your commands and results available to transcribe evidence after entering the verdict."
+        "Include finding the revision, preparing the quote, interpreting the result, "
+        "and recording the evidence."
     )
     results = []
     report = {"checker_version": version, "samples": results}
     record(args.output, report)
-    for pair, sequence, mode, row in trials():
+    for pair, sequence, mode, row, expected in trials():
         with tempfile.TemporaryDirectory() as d:
-            results.append(task(pair, sequence, mode, row, Path(d)))
+            results.append(task(pair, sequence, mode, row, expected, Path(d)))
         record(args.output, report)
         if results[-1]["status"] == "aborted":
             print("\nTrial interrupted. Observations recorded.")

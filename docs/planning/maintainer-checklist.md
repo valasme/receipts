@@ -109,11 +109,21 @@ On Linux, replay the diagnostics and packaging fakes with the following commands
 ```sh
 test -z "$(gofmt -l cmd internal)"
 go test -race ./...
-go test ./internal/check -run '^$' -fuzz '^FuzzLookup$' -fuzztime=5s
-go test ./internal/check -run '^$' -fuzz '^FuzzDelta$' -fuzztime=5s
+go test ./cmd/receipts -run '^$' -fuzz '^FuzzSavedQuotationMatchesRaw$' -fuzztime=5s
+for target in FuzzLookup FuzzDelta FuzzCommit FuzzLoose FuzzPackIndex; do
+  go test ./internal/check -run '^$' -fuzz "^${target}$" -fuzztime=5s
+done
 python -m unittest discover -s pilot -v
 python -m unittest discover -s packaging -v
-python -m unittest discover -s tests -p 'test_installed*.py' -v
+python -m unittest discover -s tests -v
 ```
 
-With that virtual environment active, run `go build -o receipts-test.exe ./cmd/receipts`, then `RECEIPTS_VALIDATE_SCHEMA=1 python tests/acceptance.py ./receipts-test.exe` and `RECEIPTS_VALIDATE_SCHEMA=1 python tests/evaluate.py ./receipts-test.exe`. The candidate and transition jobs require native Linux, macOS and Windows runners to qualify their installers and network isolation adapters. See the [release and recovery guide](../release.md) for candidate and public qualification.
+With the virtual environment active, run the same schema suites as CI.
+
+```sh
+go build -o receipts-test.exe ./cmd/receipts
+for suite in acceptance evaluate claim_files file_changes; do
+  RECEIPTS_VALIDATE_SCHEMA=1 python "tests/$suite.py" ./receipts-test.exe
+done
+```
+The candidate and transition jobs require native Linux, macOS and Windows runners to qualify their installers and network isolation adapters. See the [release and recovery guide](../release.md) for candidate and public qualification.

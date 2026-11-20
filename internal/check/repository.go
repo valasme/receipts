@@ -14,12 +14,21 @@ import (
 const maxConfigBytes = 256 << 10
 const configSizeLimit = limitError("256 KiB Git config size")
 
+type repositoryLayout uint8
+
+const (
+	noRepository repositoryLayout = iota
+	cloneRoot
+	standaloneRoot
+)
+
 var (
-	errRepository  = errors.New("repository_unavailable")
-	errMetadata    = fmt.Errorf("%w: Git metadata is inaccessible. Check directory permissions.", errRepository)
-	errObjectDir   = fmt.Errorf("%w: The Git object directory is missing or inaccessible. Use a complete clone.", errRepository)
-	errIndirection = fmt.Errorf("%w: Git directory indirection. Use a regular clone or bare repository.", errStorage)
-	errAlternates  = fmt.Errorf("%w: alternate object database. Use a self-contained clone.", errStorage)
+	errRepository    = errors.New("repository_unavailable")
+	errCloneMetadata = fmt.Errorf("%w: Use the clone root or a bare repository.", errRepository)
+	errMetadata      = fmt.Errorf("%w: Git metadata is inaccessible. Check directory permissions.", errRepository)
+	errObjectDir     = fmt.Errorf("%w: The Git object directory is missing or inaccessible. Use a complete clone.", errRepository)
+	errIndirection   = fmt.Errorf("%w: Git directory indirection. Use a regular clone or bare repository.", errStorage)
+	errAlternates    = fmt.Errorf("%w: alternate object database. Use a self-contained clone.", errStorage)
 )
 
 func openStore(ctx context.Context, path string) (*store, error) {
@@ -33,16 +42,20 @@ func openStore(ctx context.Context, path string) (*store, error) {
 		}
 	}
 	for {
-		found, err := s.selectRoot(path)
+		layout, err := s.selectRoot(path)
 		if err != nil {
 			return nil, err
 		}
-		if found {
-			if err := s.validateRoot(); err != nil {
-				s.root.Close()
+		if layout != noRepository {
+			err := s.validateRoot(layout)
+			if err == nil {
+				return s, nil
+			}
+			s.root.Close()
+			s.root = nil
+			if !discover || !errors.Is(err, errCloneMetadata) {
 				return nil, err
 			}
-			return s, nil
 		}
 		parent := filepath.Dir(path)
 		if !discover || parent == path {
@@ -52,16 +65,16 @@ func openStore(ctx context.Context, path string) (*store, error) {
 	}
 }
 
-func (s *store) selectRoot(path string) (found bool, err error) {
+func (s *store) selectRoot(path string) (repositoryLayout, error) {
 	if err := s.filesystemOp(); err != nil {
-		return false, err
+		return noRepository, err
 	}
 	root, err := os.OpenRoot(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
+		return noRepository, nil
 	}
 	if err != nil {
-		return false, errMetadata
+		return noRepository, errMetadata
 	}
 	defer func() {
 		if s.root != root {
@@ -69,55 +82,58 @@ func (s *store) selectRoot(path string) (found bool, err error) {
 		}
 	}()
 	if err := s.filesystemOp(); err != nil {
-		return false, err
+		return noRepository, err
 	}
 	git, err := root.Lstat(".git")
 	switch {
 	case err == nil:
 		if !git.IsDir() {
-			return false, errIndirection
+			return noRepository, errIndirection
 		}
 		if err := s.filesystemOp(); err != nil {
-			return false, err
+			return noRepository, err
 		}
-		s.root, err = root.OpenRoot(".git")
+		metadata, err := root.OpenRoot(".git")
 		if err != nil {
-			return false, errMetadata
+			return noRepository, errMetadata
 		}
-		return true, nil
+		s.root = metadata
+		return cloneRoot, nil
 	case !errors.Is(err, fs.ErrNotExist):
-		return false, errMetadata
+		return noRepository, errMetadata
 	}
 	if err := s.filesystemOp(); err != nil {
-		return false, err
+		return noRepository, err
 	}
 	head, err := root.Lstat("HEAD")
 	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
+		return noRepository, nil
 	}
 	if err != nil {
-		return false, errMetadata
+		return noRepository, errMetadata
 	}
 	if !head.Mode().IsRegular() && head.Mode()&os.ModeSymlink == 0 {
-		return false, nil
+		return noRepository, nil
 	}
-	// A bare or explicitly selected Git directory has both HEAD and
-	// repository metadata. Avoid treating a lone file named HEAD as a repo.
-	for _, name := range []string{"objects", "config", "commondir"} {
+	// Ordinary directories can contain HEAD and config files. Require a
+	// Git storage directory or recorded directory indirection as well.
+	for _, name := range []string{"objects", "refs", "commondir"} {
 		if err := s.filesystemOp(); err != nil {
-			return false, err
+			return noRepository, err
 		}
-		if _, err := root.Lstat(name); err == nil {
+		info, err := root.Lstat(name)
+		if err == nil && (info.IsDir() || name == "commondir") {
 			s.root = root
-			return true, nil
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return false, errMetadata
+			return standaloneRoot, nil
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return noRepository, errMetadata
 		}
 	}
-	return false, nil
+	return noRepository, nil
 }
 
-func (s *store) validateRoot() error {
+func (s *store) validateRoot(layout repositoryLayout) error {
 	if err := s.filesystemOp(); err != nil {
 		return err
 	}
@@ -150,42 +166,51 @@ func (s *store) validateRoot() error {
 	if err != nil {
 		return errMetadata
 	}
-	return checkObjectFormat(data)
+	return checkRepositoryConfig(data, layout)
 }
 
 // Git's repository format is recorded in the local config. Treat values as
 // inert data. Includes and configuration from the surrounding environment
 // do not define the on-disk object format.
-func checkObjectFormat(data []byte) error {
+func checkRepositoryConfig(data []byte, layout repositoryLayout) error {
 	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
-	extensions := false
+	var section string
+	nonbare := false
 	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || line[0] == '#' || line[0] == ';' {
 			continue
 		}
 		if line[0] == '[' {
-			section, rest, ok := strings.Cut(line[1:], "]")
-			extensions = ok && strings.EqualFold(section, "extensions")
+			name, rest, ok := strings.Cut(line[1:], "]")
+			section = ""
+			if ok {
+				section = strings.ToLower(name)
+			}
 			line = strings.TrimSpace(rest)
 		}
-		if !extensions {
-			continue
-		}
 		key, value, _ := strings.Cut(line, "=")
-		if !strings.EqualFold(strings.TrimSpace(key), "objectformat") {
-			continue
-		}
+		key = strings.ToLower(strings.TrimSpace(key))
 		if index := strings.IndexAny(value, "#;"); index >= 0 {
 			value = value[:index]
 		}
-		switch strings.ToLower(strings.TrimSpace(value)) {
-		case "sha1", "\"sha1\"":
-		case "sha256", "\"sha256\"":
+		value = strings.ToLower(strings.Trim(strings.TrimSpace(value), "\""))
+		if section == "core" && key == "bare" {
+			nonbare = value == "false" || value == "no" || value == "off" || value == "0"
+		}
+		if section != "extensions" || key != "objectformat" {
+			continue
+		}
+		switch value {
+		case "sha1":
+		case "sha256":
 			return fmt.Errorf("%w: SHA-256 object format. Use a SHA-1 repository.", errStorage)
 		default:
 			return fmt.Errorf("%w: unrecognized Git object format", errStorage)
 		}
+	}
+	if layout == standaloneRoot && nonbare {
+		return errCloneMetadata
 	}
 	return nil
 }

@@ -82,7 +82,7 @@ jobs:
       - run: python -m unittest discover -s pilot -v
       - run: |
           if [[ -d packaging ]]; then python -m unittest discover -s packaging -v; fi
-          python -m unittest discover -s tests -p "test_installed*.py" -v
+          python -m unittest discover -s tests -v
       - name: Validate actual receipts against the versioned schema
         run: |
           python -m venv "$RUNNER_TEMP/schema"

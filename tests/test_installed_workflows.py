@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -52,10 +53,17 @@ class InstallerTests(unittest.TestCase):
             default.mkdir()
             sentinel = default / EXE
             sentinel.write_bytes(b"existing")
-            bundle = SimpleNamespace(record={"source_tag": "v0.0.1-pre.2"})
+            commit = "a" * 40
+            bundle = SimpleNamespace(record={"source_tag": "v0.0.1-pre.2", "source_commit": commit})
+            version = {
+                "Version": "v0.0.1-pre.2", "Sum": "h1:example",
+                "Origin": {"VCS": "git", "URL": "https://github.com/valasme/receipts",
+                           "Ref": "refs/tags/v0.0.1-pre.2", "Hash": commit},
+            }
             with patch.dict(os.environ, GOBIN=str(default), GOPROXY="example.invalid"), patch(
                 "preview_transition.invoke",
             ) as go:
+                go.return_value.stdout = json.dumps(version).encode()
                 for route in ("proxy-default", "direct"):
                     binary = installed_go(bundle, None, root / route, route)
                     self.assertEqual(binary, root / route / "bin" / EXE)
@@ -66,6 +74,12 @@ class InstallerTests(unittest.TestCase):
                     self.assertEqual(env["GOBIN"], str(binary.parent))
                     self.assertEqual(env["GOMODCACHE"], str(root / route / "modcache"))
                     self.assertEqual(env.get("GOPROXY"), "direct" if route == "direct" else None)
+                go.reset_mock()
+                version["Origin"]["Hash"] = "b" * 40
+                go.return_value.stdout = json.dumps(version).encode()
+                with self.assertRaisesRegex(ValueError, "does not match the pinned source commit"):
+                    installed_go(bundle, None, root / "wrong", "proxy-default")
+                self.assertEqual(go.call_count, 1)
             self.assertEqual(sentinel.read_bytes(), b"existing")
 
     def test_rpm_header_architecture(self):

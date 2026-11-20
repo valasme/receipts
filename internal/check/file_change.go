@@ -87,15 +87,11 @@ func inspectFileChange(s *store, receipt FileChangeReceipt) (FileChangeReceipt, 
 func (side *fileObservation) inspect(s *store, path string) error {
 	treeID, err := s.commitTree(side.commit)
 	if err != nil {
-		side.detail = failureDetail(err)
-		switch {
-		case errors.Is(err, errNotCommit):
+		if errors.Is(err, errNotCommit) {
 			return err
-		case errors.Is(err, errCommitStructure):
-			side.failure = "object_unavailable"
-		default:
-			side.failure = objectFailure(err, "revision_unavailable")
 		}
+		side.failure = commitFailureReason(err)
+		side.detail = failureDetail(err)
 		return nil
 	}
 	side.entry, err = s.findPath(treeID, path)

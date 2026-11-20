@@ -10,6 +10,7 @@ from github import (
     existing,
     preview,
     publish,
+    reconcile,
     source,
     submission_number,
 )
@@ -122,6 +123,27 @@ class Publication(unittest.TestCase):
             publish(self.api, 1, fail)
         self.assertEqual(self.api.comments[0]["body"], body)
         self.api.body += "\nUpdated."
+        with self.assertRaises(ApiFailure):
+            publish(self.api, 1, fail)
+        self.assertEqual(self.api.comments[0]["body"], STALE)
+
+    def test_failed_preview_can_only_retire_stale_owned_receipt(self):
+        self.assertEqual(reconcile(self.api, 1), "current or empty")
+        self.assertEqual(self.api.comments, [])
+        self.assertEqual(self.post(), "updated")
+        self.assertEqual(reconcile(self.api, 1), "current or empty")
+        self.api.body += "\nUpdated."
+        self.assertEqual(reconcile(self.api, 1), "stale")
+        self.assertEqual([entry["body"] for entry in self.api.comments], [STALE])
+
+    def test_checker_failure_after_second_edit_retires_old_receipt(self):
+        self.assertEqual(self.post(), "updated")
+        self.api.body += "\nFirst update."
+
+        def fail(_):
+            self.api.body += "\nSecond update."
+            raise ApiFailure("checker unavailable")
+
         with self.assertRaises(ApiFailure):
             publish(self.api, 1, fail)
         self.assertEqual(self.api.comments[0]["body"], STALE)

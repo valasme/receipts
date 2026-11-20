@@ -156,6 +156,21 @@ def render(claim, executable):
     return p.stdout.decode("utf-8").replace("@", "@\u200b")
 
 
+def retire_stale(api, number, old):
+    if not old:
+        return False
+    previous = re.search(r"\nInput digest: ([a-f0-9]{64})\Z", old["body"])
+    if previous and source(api, number).digest != previous[1]:
+        path = f"/issues/comments/{int(old['id'])}"
+        api.request("PATCH", path, {"body": STALE})
+        return True
+    return False
+
+
+def reconcile(api, number):
+    return "stale" if retire_stale(api, number, existing(api, number)) else "current or empty"
+
+
 def publish(api, number, check):
     observation = source(api, number)
     digest = observation.digest
@@ -163,11 +178,7 @@ def publish(api, number, check):
     try:
         receipt = check(observation.claim) if observation.claim else None
     except ApiFailure:
-        if old:
-            previous = re.search(r"\nInput digest: ([a-f0-9]{64})\Z", old["body"])
-            if previous and previous[1] != digest and source(api, number).digest == digest:
-                path = f"/issues/comments/{int(old['id'])}"
-                api.request("PATCH", path, {"body": STALE})
+        retire_stale(api, number, old)
         raise
     if not old and not (observation.consent and receipt):
         return "suppressed or empty"
@@ -215,6 +226,8 @@ def main():
             f.write(receipt)
     elif sys.argv[1] == "publish":
         print(publish(api, number, lambda claim: render(claim, exe)))
+    elif sys.argv[1] == "reconcile":
+        print(reconcile(api, number))
     else:
         raise ValueError("invalid mode")
 

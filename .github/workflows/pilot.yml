@@ -61,7 +61,7 @@ jobs:
       cancel-in-progress: false
     env:
       SUBMISSION: ${{ needs.identify.outputs.submission }}
-    if: vars.RECEIPTS_PUBLISH == 'true'
+    if: ${{ always() && needs.identify.result == 'success' && (needs.preview.result == 'success' || needs.preview.result == 'failure') && vars.RECEIPTS_PUBLISH == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -75,10 +75,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        if: needs.preview.result == 'success'
         with:
           go-version-file: go.mod
           cache: false
       - run: go build -o receipts-pilot ./cmd/receipts
-      - run: python pilot/github.py publish
+        if: needs.preview.result == 'success'
+      - shell: bash
+        run: |
+          if [[ "$PREVIEW_RESULT" == failure ]]; then
+            python pilot/github.py reconcile
+          else
+            python pilot/github.py publish
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
+          PREVIEW_RESULT: ${{ needs.preview.result }}

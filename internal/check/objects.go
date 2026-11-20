@@ -144,7 +144,10 @@ func validIdentity(data []byte) bool {
 	if !ok || len(timestamp) == 0 || len(zone) != 5 || (zone[0] != '+' && zone[0] != '-') {
 		return false
 	}
-	if _, err := strconv.ParseUint(string(timestamp), 10, 64); err != nil {
+	if (len(timestamp) > 1 && timestamp[0] == '0') || timestamp[0] < '0' || timestamp[0] > '9' {
+		return false
+	}
+	if _, err := strconv.ParseUint(string(timestamp), 10, 63); err != nil {
 		return false
 	}
 	for _, c := range zone[1:] {

@@ -15,10 +15,16 @@ from installed_licenses import verify as verify_licenses
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packaging"))
 from bundle import (
-    HISTORICAL_WITHOUT_NOTICES, NOTICES, RECORD, digest, extract_installers,
-    extract_native, validate_tag, verify_bundle,
+    HISTORICAL_WITHOUT_NOTICES,
+    NOTICES,
+    RECORD,
+    digest,
+    extract_installers,
+    extract_native,
+    validate_tag,
+    verify_bundle,
 )
-from stage import GitHub, REPO, public
+from stage import REPO, GitHub, public
 from toolchain import MODULE, build_info
 
 TARGET, ARCH = native_target()
@@ -54,7 +60,7 @@ def installed_go(bundle, source, root, route):
     installed.mkdir(parents=True, exist_ok=True)
     environment = dict(
         os.environ, GOBIN=str(installed), GOMODCACHE=str(root / "modcache"),
-        GOENV="off", GOTOOLCHAIN="local", GOWORK="off",
+        GOENV="off", GOFLAGS="", GOTOOLCHAIN="local", GOWORK="off",
     )
     if route == "candidate":
         requirement = "./cmd/receipts"
@@ -66,7 +72,23 @@ def installed_go(bundle, source, root, route):
         environment.pop("GONOSUMDB", None)
         if route == "direct":
             environment["GOPROXY"] = "direct"
-        requirement = f"{MODULE}/cmd/receipts@{bundle.record['source_tag']}"
+        tag = bundle.record["source_tag"]
+        downloaded = invoke(
+            "go", "mod", "download", "-json", f"{MODULE}@{tag}",
+            label=f"Resolve Go module using {route}", timeout=180, cwd=root,
+            env=environment, capture_output=True,
+        )
+        details = json.loads(downloaded.stdout)
+        origin = details.get("Origin") or {}
+        if (
+            details.get("Version") != tag or origin.get("VCS") != "git"
+            or origin.get("URL", "").removesuffix(".git") != f"https://{MODULE}"
+            or origin.get("Hash") != bundle.record["source_commit"]
+            or origin.get("Ref") != f"refs/tags/{tag}"
+            or not details.get("Sum")
+        ):
+            raise ValueError(f"Go module {tag} does not match the pinned source commit")
+        requirement = f"{MODULE}/cmd/receipts@{tag}"
     invoke("go", "install", requirement, label=f"Go install using {route}",
            timeout=300, cwd=source if route == "candidate" else root, env=environment)
     return installed / EXE
@@ -151,11 +173,11 @@ class Installer:
             return self.binary.parent.is_dir()
         if self.channel == "deb":
             return subprocess.run(
-                ["dpkg-query", "-W", "receipts"], capture_output=True, timeout=20,
+                ["dpkg-query", "-W", "receipts"], check=False, capture_output=True, timeout=20,
             ).returncode == 0
         if self.channel == "rpm" and self.rpm_ready:
             return subprocess.run(
-                [*self.rpm, "-q", "receipts"], capture_output=True, timeout=20,
+                [*self.rpm, "-q", "receipts"], check=False, capture_output=True, timeout=20,
             ).returncode == 0
         return False
 
@@ -225,7 +247,7 @@ class Installer:
             formula = tap_dir / "Formula/receipts.rb"
             formula.parent.mkdir(exist_ok=True)
             shutil.copyfile(manifests / "Formula/receipts.rb", formula)
-            if new_tap and subprocess.run(["brew", "command", "trust"], capture_output=True, timeout=20).returncode == 0:
+            if new_tap and subprocess.run(["brew", "command", "trust"], check=False, capture_output=True, timeout=20).returncode == 0:
                 invoke("brew", "trust", "--formula", self.formula, label="Trust preview formula")
             if candidate:
                 cache = Path(text("brew", "--cache", "--build-from-source", self.formula,
@@ -260,6 +282,8 @@ class Installer:
             expected = extract_native(bundle, TARGET, ARCH, Path(directory))
             qualify(self.binary, bundle.version, expected=expected, alias=self.alias)
             self.owned_paths.add(self.binary.resolve(strict=True))
+            if bundle.record["source_tag"] != HISTORICAL_WITHOUT_NOTICES:
+                verify_licenses(self.binary, source=expected.parent)
             if self.license:
                 for published, installed in [
                     ("LICENSE", self.license), (NOTICES, self.license.with_name(NOTICES)),
@@ -284,7 +308,7 @@ def exercise(installer, phases, *, candidate=False):
     except BaseException:
         try:
             installer.close()
-        except Exception as cleanup:
+        except Exception as cleanup:  # noqa: BLE001 - preserve the active failure
             print(f"Cleanup failed for {installer.channel}: {cleanup}", file=sys.stderr)
         raise
     else:

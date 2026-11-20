@@ -122,10 +122,9 @@ func inspectQuote(s *store, r Receipt, quote []byte) (Receipt, error) {
 		if errors.Is(err, errNotCommit) {
 			return Receipt{}, err
 		}
-		if errors.Is(err, errCommitStructure) {
-			r.Reason = "object_unavailable"
-		}
-		return unresolved(r, err), nil
+		r.Reason = commitFailureReason(err)
+		r.Detail = failureDetail(err)
+		return r, nil
 	}
 	r.Evidence = Evidence{Format: "sha1", Commit: rev}
 	r.Reason = "object_unavailable"
@@ -189,6 +188,13 @@ func unresolved(r Receipt, err error) Receipt {
 	r.Reason = objectFailure(err, r.Reason)
 	r.Detail = failureDetail(err)
 	return r
+}
+
+func commitFailureReason(err error) string {
+	if errors.Is(err, errCommitStructure) {
+		return "object_unavailable"
+	}
+	return objectFailure(err, "revision_unavailable")
 }
 
 func objectFailure(err error, fallback string) string {
