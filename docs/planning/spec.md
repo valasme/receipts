@@ -75,7 +75,7 @@ Ship local alpha when all normative contract cases pass, there are zero false co
 
 ## Infrastructure pre-alpha
 
-The [infrastructure pre-alpha milestone](https://github.com/valasme/receipts/milestone/1) qualifies the starter before the first checker. It covers the CLI shell, accessible help, error delivery, bundled documentation, native CI, packaging, signed install paths, publication and recovery. PA01–PA04 are independent of T01–T09. A limited archive-only preview is permissible when described precisely. Full channel coverage requires evidence for every promised installer and target. These added distribution requirements supersede M3 timing for the full distribution milestone; external approval lead times are unknown. M1–M4 below describe delivery of claim checking.
+The [infrastructure pre-alpha milestone](https://github.com/valasme/receipts/milestone/1) qualifies the starter before the first checker. It covers the CLI shell, accessible help, error delivery, bundled documentation, native CI, packaging, verified unsigned install paths, publication and recovery. Native signing and provider recovery begin when the owner approves v1. PA01–PA04 are independent of T01–T09. A limited archive-only preview is permissible when described precisely. Full channel coverage requires evidence for every promised installer and target. These added distribution requirements supersede M3 timing for the full distribution milestone; external approval lead times are unknown. M1–M4 below describe delivery of claim checking. [Signing decision](../adr/0002-defer-native-signing-until-v1.md)
 
 ## Milestones and solo capacity
 

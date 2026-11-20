@@ -1,6 +1,6 @@
 # Can one person maintain and debug Receipts?
 
-The public preview is v0.0.1-pre.1. Checked items have a test, inspection or rehearsal. The [verification record](../verification.md) gives results and limitations. The [review inventory](review-inventory.md) covers the broader product, and the [work queue](README.md) links the tickets.
+The current unsigned preview is v0.0.1-pre.2. Checked items have a test, inspection or rehearsal. The [verification record](../verification.md) gives results and limitations. The [review inventory](review-inventory.md) covers the broader product, and the [work queue](README.md) links the tickets.
 
 ## Follow one request
 

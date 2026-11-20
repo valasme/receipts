@@ -22,7 +22,7 @@ This track can finish before the claim checker. Start with PA01 for the requeste
 | --- | --- | --- |
 | [PA01](https://github.com/valasme/receipts/issues/11) | Starter CLI and bundled documentation | None |
 | [PA02](https://github.com/valasme/receipts/issues/12) | Same-revision native CI and six-target release candidate | PA01 |
-| [PA03](https://github.com/valasme/receipts/issues/13) | Signed installation and removal across promised channels | PA02 |
+| [PA03](https://github.com/valasme/receipts/issues/13) | Verified installation, upgrades and removal across preview channels | PA02 |
 | [PA04](https://github.com/valasme/receipts/issues/14) | Public prerelease, independent consumer checks and correction drill | PA03 |
 
 ## Solo work queue
@@ -55,4 +55,4 @@ For each milestone, record the tested checker revision, corpus or fixture versio
 
 ## Planning review
 
-The starter review predates implementation. The [published limited preview](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.1) includes the local quotation checker. The [qualification record](../verification.md) covers correctness, native installs, limits and open pilot and signing gates. The 12 paired human timings are outstanding.
+The starter review predates implementation. The [published limited preview](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.2) includes the local quotation checker. The [qualification record](../verification.md) covers correctness, native installs, limits and open pilot gates. Native signing is deferred until the owner approves v1. [Signing decision](../adr/0002-defer-native-signing-until-v1.md) The 12 paired human timings are outstanding.

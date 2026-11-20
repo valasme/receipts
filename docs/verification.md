@@ -1,8 +1,20 @@
 # Limited preview verification
 
+## Corrected unsigned preview v0.0.1-pre.2
+
+GitHub published the immutable prerelease on 2026-11-20 at 19:02 UTC. The tagged source and build workflow both resolve to `57f6601e0c52aaf835f8930ebc2ff81a603f8ffd`. All six native candidate install jobs passed for the exact tag, including the 60-case quotation corpus. The signed build record identifies Go 1.27.4. [Release](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.2) · [Tagged qualification](https://github.com/valasme/receipts/actions/runs/44797012853) · [Public installer jobs](https://github.com/valasme/receipts/actions/runs/44798403802)
+
+All 13 public assets matched GitHub's digests. All 12 files listed in the attested checksum manifest matched the listed hashes. The SHA-256 of the manifest itself is `e6364759df3af594cf05638ac87dfe96cde3a5298180d663c8c12afd15ebb49e`. The manifest and build record were verified against the release workflow and tagged commit. Candidate checks compared the Apache license and third-party notices byte for byte inside the installed archives, Debian and RPM packages, and through the installed CLI. The manifest drives the same native install suite for the public downloads. [Install and notice locations](release.md)
+
+On Linux amd64, the archive and pinned Go module both went from pre.1 to pre.2 and back to pre.1 in isolated directories. A frozen Git fixture produced the expected receipt at each step. The test removed the Go executable and archive selection after rollback. The remaining channel and architecture upgrade evidence belongs to [issue #13](https://github.com/valasme/receipts/issues/13).
+
+GitHub created an empty draft during the tagged run before the release list exposed it. Retrying the staging job resumed the existing draft using the qualified artifact. The package bytes and Git tag remained identical. Subsequent workflow revisions retry draft discovery briefly after successful creation. Platform signing and provider recovery are deferred until the owner approves v1. [Owner decision](adr/0002-defer-native-signing-until-v1.md)
+
+## Earlier qualification for v0.0.1-pre.1
+
 Application source: tag v0.0.1-pre.1, commit b82aa5a3246a82e8fc5ae0f10ed3878f1d8e84fd. Test tools and workflow recipes can advance separately. The build record shipped with the release identifies both revisions and the compiler. [Source checks](https://github.com/valasme/receipts/actions/runs/44786114150) · [Patched release qualification](https://github.com/valasme/receipts/actions/runs/44786692521)
 
-## Published release
+## First public preview
 
 GitHub published the immutable, unsigned prerelease at 17:52 UTC on November 20, 2026. Its 13 assets contain six native archives, four Linux packages, the local installer manifests, a build record and a checksum manifest. The public checksum manifest has SHA-256 `010d115251a09ff6575a3aebed68472d26d4a464ebac065cd466de61c19f5e96`. All 12 entries matched after download. GitHub provenance verifies against the release workflow at `e93e9b991f44c4643ac984f40e9096d7c550d7b3`. Apple Developer ID signing, notarization and Windows Authenticode remain open. [Download v0.0.1-pre.1](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.1) · [Installation and verification](release.md)
 
