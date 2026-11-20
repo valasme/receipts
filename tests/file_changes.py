@@ -1,30 +1,17 @@
 """Check file-change receipts through the public review CLI."""
 
 import json
-import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 
-ENV = {
-    **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
-    "GIT_CONFIG_NOSYSTEM": "1",
-    "GIT_CONFIG_GLOBAL": os.devnull,
-    "GIT_AUTHOR_NAME": "Fixture",
-    "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
-    "GIT_AUTHOR_DATE": "2025-01-01T00:00:00Z",
-    "GIT_COMMITTER_NAME": "Fixture",
-    "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
-    "GIT_COMMITTER_DATE": "2025-01-01T00:00:00Z",
-}
+from git_fixture import env, git_bytes
 
 
 def git(repo, *args, data=None):
-    return subprocess.check_output(
-        ["git", "-C", repo, *args], input=data, env=ENV, timeout=20,
-    ).decode().rstrip("\n")
+    return git_bytes(repo, *args, data=data).decode().rstrip("\n")
 
 
 def tree(repo, files, extra=()):
@@ -140,7 +127,7 @@ def compare_modes_and_kinds(binary, repo):
 def unavailable_objects(binary, repo, comparison, head):
     missing_commit = "1" * 40
     absent = subprocess.run(
-        ["git", "-C", repo, "cat-file", "-e", missing_commit], env=ENV, capture_output=True, timeout=20,
+        ["git", "-C", repo, "cat-file", "-e", missing_commit], env=env, capture_output=True, timeout=20,
     )
     assert absent.returncode != 0, absent
     missing = check_changes(binary, repo, missing_commit, head, {"guide.txt": "Can't check"})
@@ -151,7 +138,7 @@ def unavailable_objects(binary, repo, comparison, head):
     loose.chmod(0o600)
     loose.unlink()
     absent = subprocess.run(
-        ["git", "-C", repo, "cat-file", "-e", blob], env=ENV, capture_output=True, timeout=20,
+        ["git", "-C", repo, "cat-file", "-e", blob], env=env, capture_output=True, timeout=20,
     )
     assert absent.returncode != 0, absent
     missing = check_changes(binary, repo, comparison, head, {"guide.txt": "Can't check"})

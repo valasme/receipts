@@ -8,18 +8,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+from git_fixture import git
+
 binary = Path(sys.argv[1]).resolve()
-env = dict(
-    os.environ,
-    GIT_CONFIG_NOSYSTEM="1",
-    GIT_CONFIG_GLOBAL=os.devnull,
-    GIT_AUTHOR_NAME="Fixture",
-    GIT_AUTHOR_EMAIL="test@example.invalid",
-    GIT_COMMITTER_NAME="Fixture",
-    GIT_COMMITTER_EMAIL="test@example.invalid",
-    GIT_AUTHOR_DATE="2025-01-01T00:00:00Z",
-    GIT_COMMITTER_DATE="2025-01-01T00:00:00Z",
-)
 
 validator = None
 if os.getenv("RECEIPTS_VALIDATE_SCHEMA") == "1":
@@ -30,14 +21,6 @@ if os.getenv("RECEIPTS_VALIDATE_SCHEMA") == "1":
     )
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)
-
-
-def git(repo, *args):
-    return (
-        subprocess.check_output(["git", "-C", str(repo), *args], env=env)
-        .strip()
-        .decode()
-    )
 
 
 def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
@@ -59,6 +42,7 @@ def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
         check=False,
         input=quote if quote_file is None else None,
         capture_output=True,
+        timeout=20,
     )
     assert p.returncode == expected, (p.returncode, p.stdout, p.stderr)
     if expected:

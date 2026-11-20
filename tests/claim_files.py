@@ -5,7 +5,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from acceptance import binary, git
+from acceptance import binary
+from git_fixture import git
 
 
 def invoke(repo, *args, data=None, exit_code=0):

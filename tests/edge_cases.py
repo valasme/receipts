@@ -5,7 +5,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from acceptance import binary, check, env, git
+from acceptance import binary, check
+from git_fixture import git, git_bytes
 
 
 def suite(repo):
@@ -25,6 +26,7 @@ def suite(repo):
              "--path", name, "--quote-file", "-"],
             input=b"a",
             capture_output=True,
+            timeout=20,
         )
         assert result.returncode == 2 and not result.stdout
         assert b"git rev-parse --verify 'TAG^{commit}'" in result.stderr
@@ -61,7 +63,7 @@ def suite(repo):
         quote = Path(directory) / "private-excerpt"
         quote.write_bytes(b"aaa\n")
         args = [binary, "check", "--rev", rev, "--path", name, "--quote-file", quote]
-        r = subprocess.run(args, check=False, cwd=repo, capture_output=True)
+        r = subprocess.run(args, check=False, cwd=repo, capture_output=True, timeout=20)
         assert r.returncode == 0 and r.stdout.startswith(b"Verified")
         for private in [
             str(repo).encode(),
@@ -71,7 +73,7 @@ def suite(repo):
         ]:
             assert private not in r.stdout + r.stderr
         quote.unlink()
-        r = subprocess.run(args, check=False, cwd=repo, capture_output=True)
+        r = subprocess.run(args, check=False, cwd=repo, capture_output=True, timeout=20)
         assert (
             r.returncode == 2 and not r.stdout and str(quote).encode() not in r.stderr
         )
@@ -85,23 +87,27 @@ def suite(repo):
                 input=b"aa",
                 stdout=full,
                 stderr=subprocess.PIPE,
+                timeout=20,
             )
             assert r.returncode == 1 and r.stderr
+        print("Output failure (/dev/full): passed.")
+    else:
+        print("Output failure (/dev/full): skipped, device unavailable.")
+
+    if os.name == "posix" and os.geteuid() != 0:
         blob = repo / ".git/objects" / original[:2] / original[2:]
         blob.chmod(0)
         try:
-            if os.geteuid() != 0:
-                assert check(repo, rev, name, b"a")["verdict"] == "cant_check"
+            assert check(repo, rev, name, b"a")["verdict"] == "cant_check"
         finally:
             blob.chmod(0o444)
+        print("Denied object read: 1/1 passed.")
+    else:
+        print("Denied object read: 0/1 eligible, requires an unprivileged POSIX user.")
     lines = b"".join(
         f"100644 blob {original}\tentry{i:05d}\n".encode() for i in range(32769)
     )
-    tree = (
-        subprocess.check_output(["git", "-C", repo, "mktree"], input=lines, env=env)
-        .strip()
-        .decode()
-    )
+    tree = git_bytes(repo, "mktree", data=lines).strip().decode()
     broad = git(repo, "commit-tree", tree, "-m", "wide")
     assert check(repo, broad, "absent", b"x")["reason"] == "resource_limit"
 
@@ -109,4 +115,4 @@ def suite(repo):
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="receipts ü ") as directory:
         suite(Path(directory))
-    print("Edge, permission, privacy and tree limit checks passed.")
+    print("Edge, privacy and tree limit checks passed.")

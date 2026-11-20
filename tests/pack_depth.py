@@ -2,12 +2,12 @@
 
 import hashlib
 import struct
-import subprocess
 import tempfile
 import zlib
 from pathlib import Path
 
-from acceptance import check, env, git
+from acceptance import check
+from git_fixture import git_bytes, git
 
 
 def suite(repo):
@@ -40,11 +40,7 @@ def suite(repo):
         oid = ids[depth]
         assert git(repo, "cat-file", "blob", oid) == "ab" + chr(65 + depth)
         entry = f"100644 blob {oid}\titem\n".encode()
-        tree = (
-            subprocess.check_output(["git", "-C", repo, "mktree"], input=entry, env=env)
-            .strip()
-            .decode()
-        )
+        tree = git_bytes(repo, "mktree", data=entry).strip().decode()
         rev = git(repo, "commit-tree", tree, "-m", "depth boundary")
         receipt = check(repo, rev, "item", b"ab")
         assert receipt["reason"] == (

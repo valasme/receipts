@@ -2,6 +2,13 @@
 
 520 review questions expressed as checks. Each section names its stage and owning ticket. Use a row to record a test, observation, accepted limit, or reason to defer when working that ticket. Marked boxes have supporting implementation, measurement or inspection in the [verification record](../verification.md) and the linked tests. Open boxes are unverified or await their stage. The release decisions in the spec govern shipment. Conditional discovery is parked until its use case exists. One owner can automate repeatable checks and explicitly mark unavailable native hardware or assistive technology as untested.
 
+| Stage | Disposition and evidence |
+| --- | --- |
+| Preview installer transitions | Passed for 22 channel and target combinations on workflow revision `13cc444`. [Transition record](../verification.md#upgrade-rollback-and-removal) |
+| Timing and ordinary review | The first 12 paired tasks failed to qualify. A fresh completed-review trial is blocked on a human evaluator. [Timing record](../verification.md#human-timing-and-pilot-decision) |
+| Accessibility | Narrow-terminal output and speech synthesis exercised. Interactive assistive technology remained untested. [Readiness evidence](../verification.md#readiness-before-another-release) |
+| GitHub pilot | Parked after the failed timing gate. Simulated adapter tests establish local behavior. [Pilot decision](../verification.md#human-timing-and-pilot-decision) |
+
 ## Product boundary and solo ownership
 
 Local alpha · T01

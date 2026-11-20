@@ -67,15 +67,11 @@ On a Linux amd64 Ryzen 5 5600G, four new CLI processes searched an 8 MiB fixture
 
 ## Ground truth and coverage
 
-The frozen corpus commit is 1240308. All 60 synthetic cases have ground truth defined before evaluation. Three repository families are set aside as a 30-case holdout; each split contains 10 expected results in each verdict class. Git independently opens the committed blob for every decisive result.
+The original 60-case corpus was frozen at `1240308`. Its ten inconclusive holdout rows duplicate development fixtures and are reported as shared controls. The replacement holdout supplies ten predeclared cases with unique paths and quotations. They cover invalid UTF-8, missing blobs, non-tree ancestors, gitlinks, and blobs above the read budget. Git builds the pinned fixtures and independently opens every decisive blob for corroboration.
 
-| Expected across both splits | Verified | Contradicted | Can't check |
-| --- | ---: | ---: | ---: |
-| Verified | 20 | 0 | 0 |
-| Contradicted | 0 | 20 | 0 |
-| Can't check | 0 | 0 | 20 |
+`python tests/evaluate.py <receipts>` reports confusion matrices for development, holdout, and shared controls even if an observation fails. The local replay for [the audit qualification ticket](https://github.com/valasme/receipts/issues/28) observed 30/30 correct and 20/30 decisive in each evaluated split, plus 10/10 shared controls. The holdout produced zero false contradictions among 20 eligible claims. These are synthetic examples from six families.
 
-60/60 correct, 40/60 decisive, zero skipped. In the holdout, false contradictions were 0/20 claims whose expected verdict was verified or inconclusive. Synthetic cases from six families are a limited sample; this result cannot establish a real-world error rate. The process suite separately replays all three presentation formats and GitHub receipt publication logic is tested independently of the matcher.
+On Linux, run `python tests/benchmark.py <receipts> --runs 4` with Git and GNU coreutils available. The harness creates a fixed 8 MiB loose blob and searches for a 64 KiB near match. It reports wall time and the per-invocation Linux peak RSS. It requests page-cache eviction for the fixture object files before each first sample and runs the paired warm sample immediately afterward. The eviction request is advisory. The kernel, binary and filesystem metadata can stay cached. Retain the JSON report with the checker and host versions when comparing runs.
 
 ## Solo release, support and pilot gates
 
@@ -90,7 +86,7 @@ One human evaluator completed 12 fresh paired tasks using the counterbalanced ti
 | Manual | 4/12 | 1.84 s | 0/4 |
 | Receipts | 4/12 | 1.43 s | 0/4 |
 
-The median of the 12 paired savings was **21.4%**, below the 25% expansion gate. Receipts was faster in 7/12 pairs. Both methods were answered Verified on every task, including the eight expected contradictions per method. These measurements provide weak evidence of completed review effort. The timing file captures the entered verdict and elapsed time. It has no per-step traces or installed version metadata. A single evaluator on synthetic paired tasks is vulnerable to familiarity, recall and procedure effects. The working file stays private.
+The median of the 12 paired savings was **21.4%**, below the 25% expansion gate. Receipts was faster in 7/12 pairs. Both methods were answered Verified on every task, including the eight expected contradictions per method. These measurements provide weak evidence of completed review effort. The historical timing file captured only the entered verdict and elapsed time. The revised harness records the installed version, observed revision and blob, plus completed, discarded and aborted tasks in an atomic private report. A fresh human trial is still required. A single evaluator on synthetic paired tasks is vulnerable to familiarity, recall and procedure effects. The working file stays private.
 
 **Decision: stop pilot work for this preview.** The 60-case correctness run remains a separate gate with 60/60 correct and 40/40 decisive cases replayed. No live read-only preview or publisher was enabled. Revisit the pilot only after a fresh qualified timing result. [Human timing](https://github.com/valasme/receipts/issues/7) · [Read-only pilot](https://github.com/valasme/receipts/issues/9) · [Comment pilot](https://github.com/valasme/receipts/issues/10)
 

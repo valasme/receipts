@@ -4,14 +4,15 @@ import tempfile
 import zlib
 from pathlib import Path
 
-from acceptance import check, git
+from acceptance import check
+from git_fixture import git
 
 
 def exercise(repo):
     git(repo, "init", "-q", "--object-format=sha1")
     git(repo, "config", "core.autocrlf", "false")
     path = repo / "log.txt"
-    # Similar historical blobs encourage a genuine pack delta chain.
+    # Real Git packing covers interoperability; pack_depth.py pins the delta chain.
     base = b"".join(f"row {i}: shared text\n".encode() for i in range(800))
     commits = []
     for i in range(12):
@@ -21,11 +22,7 @@ def exercise(repo):
         commits.append(git(repo, "rev-parse", "HEAD"))
     git(repo, "gc", "--aggressive", "--prune=now")
     idx = next((repo / ".git/objects/pack").glob("*.idx"))
-    listing = git(repo, "verify-pack", "-v", str(idx))
-    assert any(
-        len(line.split()) == 7 and line.split()[1] == "blob"
-        for line in listing.splitlines()
-    )
+    git(repo, "verify-pack", "-v", str(idx))
     for i, rev in enumerate(commits):
         assert (
             check(repo, rev, "log.txt", f"iteration {i}\n".encode())["verdict"]
@@ -53,4 +50,4 @@ def exercise(repo):
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as d:
         exercise(Path(d))
-    print("Deltas, damaged and absent objects, and byte limits passed")
+    print("Git-generated packs, damaged and absent objects, and byte limits passed")

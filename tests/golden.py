@@ -5,7 +5,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from acceptance import binary, env, git
+from acceptance import binary
+from git_fixture import git_bytes, git
 
 REV = "37fdc0ff48840283d170b8c2fac06d2e230a76e7"
 BLOB = "42b7aba7a9b41f406f1a40c209f559faf0c42285"
@@ -29,15 +30,10 @@ def golden():
             + data
             + b"\ndone\n"
         )
-        subprocess.run(
-            ["git", "-C", directory, "fast-import", "--quiet"],
-            input=stream,
-            env=env,
-            check=True,
-        )
+        git_bytes(repo, "fast-import", "--quiet", data=stream)
         assert git(repo, "rev-parse", "refs/heads/main") == REV
         version = (
-            subprocess.check_output([binary, "--version"], text=True)
+            subprocess.check_output([binary, "--version"], text=True, timeout=20)
             .strip()
             .removeprefix("receipts ")
         )
@@ -76,6 +72,7 @@ def golden():
                 "json",
             ],
             input=b"line two",
+            timeout=20,
         )
         assert actual == json.dumps(expected, separators=(",", ":")).encode() + b"\n", (
             actual
