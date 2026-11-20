@@ -8,6 +8,14 @@ from pathlib import Path
 from acceptance import binary, check, env, git
 
 
+def raw_object(repo, kind, body):
+    return subprocess.check_output(
+        ["git", "-C", repo, "hash-object", "--literally", "-w", "-t", kind, "--stdin"],
+        input=body,
+        env=env,
+    ).strip().decode()
+
+
 def suite(repo):
     git(repo, "init", "-q", "--object-format=sha1")
     git(repo, "config", "core.autocrlf", "false")
@@ -56,6 +64,36 @@ def suite(repo):
         check(repo, rev, path, b"x", expected=2)
     for path in ["a" * 4096, "/".join(["a"] * 128)]:
         assert check(repo, rev, path, b"x")["reason"] == "path_absent"
+
+    commit = git(repo, "cat-file", "commit", rev)
+    tree_header, _, rest = commit.partition("\n")
+    identity = "Fixture <test@example.invalid> 1735689600 +0000"
+    required = f"author {identity}\ncommitter {identity}\n"
+    for body in [
+        tree_header + "\n",
+        tree_header + "\nauthor missing-email\n" + rest,
+        tree_header.upper().replace("TREE ", "tree ") + "\n" + rest,
+        tree_header + "\nparent invalid\n" + required + "\n",
+        tree_header + "\n" + required + "tree " + tree_header[5:] + "\n\n",
+    ]:
+        bad = raw_object(repo, "commit", body.encode())
+        receipt = check(repo, bad, name, b"aaa")
+        assert (receipt["verdict"], receipt["reason"]) == (
+            "cant_check",
+            "object_unavailable",
+        ), receipt
+    # The parent is outside this shallow history. Continuation lines are part of
+    # an optional header and cannot be mistaken for required commit headers.
+    shallow = raw_object(
+        repo,
+        "commit",
+        (
+            tree_header + "\nparent " + "c" * 40 + "\n" + required
+            + "encoding UTF-8\ngpgsig example\n continuation\n\nmessage\n"
+        ).encode(),
+    )
+    (repo / ".git" / "shallow").write_text(shallow + "\n", encoding="ascii")
+    assert check(repo, shallow, name, b"aaa")["verdict"] == "verified"
 
     with tempfile.TemporaryDirectory() as directory:
         quote = Path(directory) / "private-excerpt"

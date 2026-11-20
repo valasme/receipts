@@ -45,15 +45,93 @@ func (s *store) commitTree(rev string) (string, error) {
 	if commit.kind != "commit" {
 		return "", errNotCommit
 	}
-	header, _, ok := bytes.Cut(commit.data, []byte("\n"))
-	if !ok || len(header) != 45 || !bytes.HasPrefix(header, []byte("tree ")) {
+	return parseCommit(commit.data)
+}
+
+// Read the required headers in their canonical order. Parent IDs describe
+// history and do not need to be available to prove a claim about this commit.
+func parseCommit(data []byte) (string, error) {
+	header, rest, ok := bytes.Cut(data, []byte("\n"))
+	if !ok || !bytes.HasPrefix(header, []byte("tree ")) || !canonicalOID(header[5:]) {
 		return "", errCommitTree
 	}
 	treeID := string(header[5:])
-	if _, err := hex.DecodeString(treeID); err != nil {
-		return "", errCommitTree
+	for bytes.HasPrefix(rest, []byte("parent ")) {
+		header, rest, ok = bytes.Cut(rest, []byte("\n"))
+		if !ok || !canonicalOID(header[7:]) {
+			return "", errCommitTree
+		}
 	}
-	return treeID, nil
+	for _, prefix := range []string{"author ", "committer "} {
+		header, rest, ok = bytes.Cut(rest, []byte("\n"))
+		if !ok || !bytes.HasPrefix(header, []byte(prefix)) || !validIdentity(header[len(prefix):]) {
+			return "", errCommitTree
+		}
+	}
+
+	optional := false
+	for {
+		header, rest, ok = bytes.Cut(rest, []byte("\n"))
+		if !ok || bytes.IndexByte(header, 0) >= 0 {
+			return "", errCommitTree
+		}
+		if len(header) == 0 {
+			return treeID, nil
+		}
+		if header[0] == ' ' && optional {
+			continue
+		}
+		key, _, found := bytes.Cut(header, []byte(" "))
+		if !found || len(key) == 0 {
+			return "", errCommitTree
+		}
+		for _, c := range key {
+			if c <= ' ' || c >= 127 {
+				return "", errCommitTree
+			}
+		}
+		switch string(key) {
+		case "tree", "parent", "author", "committer":
+			return "", errCommitTree
+		}
+		optional = true
+	}
+}
+
+func canonicalOID(id []byte) bool {
+	if len(id) != 40 {
+		return false
+	}
+	for _, c := range id {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func validIdentity(data []byte) bool {
+	name, rest, ok := bytes.Cut(data, []byte("<"))
+	if !ok || len(name) == 0 || name[len(name)-1] != ' ' || bytes.ContainsAny(name, ">\x00\r") {
+		return false
+	}
+	email, rest, ok := bytes.Cut(rest, []byte("> "))
+	if !ok || bytes.ContainsAny(email, "<>\x00\r") {
+		return false
+	}
+	timestamp, zone, ok := bytes.Cut(rest, []byte(" "))
+	if !ok || len(timestamp) == 0 || len(zone) != 5 || (zone[0] != '+' && zone[0] != '-') {
+		return false
+	}
+	if _, err := strconv.ParseUint(string(timestamp), 10, 64); err != nil {
+		return false
+	}
+	for _, c := range zone[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 type pathEntry struct {
