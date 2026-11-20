@@ -3,94 +3,125 @@ on:
   workflow_dispatch:
     inputs:
       candidate_tag:
-        description: Existing source tag to rebuild (empty for a snapshot)
+        description: Source tag to stage (empty for a snapshot)
         type: string
-        required: false
-      publish_limited:
-        description: Publish an explicitly unsigned limited prerelease after validation
-        type: boolean
-        default: false
+      draft_id:
+        description: ID of the reviewed draft to promote (empty to build a candidate)
+        type: string
+      candidate_checksum:
+        description: Reviewed checksums.txt SHA-256 (required for promotion)
+        type: string
   push:
     tags: ['v*']
 permissions:
   contents: read
 env:
   SOURCE_TAG: ${{ inputs.candidate_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+  RELEASE_GO: '1.27.4'
+  GOTOOLCHAIN: local
 jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.revision.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: revision
+        name: Pin source by its fully qualified tag
+        env:
+          DRAFT_ID: ${{ inputs.draft_id }}
+          CANDIDATE_CHECKSUM: ${{ inputs.candidate_checksum }}
+          TAG_PUSH: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+        run: |
+          if [[ -n "$DRAFT_ID$CANDIDATE_CHECKSUM" ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main && "$SOURCE_TAG" == *-* ]]
+            [[ "$DRAFT_ID" =~ ^[1-9][0-9]*$ && "$CANDIDATE_CHECKSUM" =~ ^[a-f0-9]{64}$ ]]
+          fi
+          flags=()
+          if [[ "$TAG_PUSH" == true ]]; then flags+=(--tag-push); fi
+          commit=$(python packaging/stage.py resolve "$SOURCE_TAG" --commit "$GITHUB_SHA" "${flags[@]}")
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
   validate:
+    needs: resolve
+    if: inputs.draft_id == ''
     uses: ./.github/workflows/test.yml
     with:
-      revision: ${{ inputs.candidate_tag || github.sha }}
+      revision: ${{ needs.resolve.outputs.commit }}
+      historical: ${{ contains(fromJSON('["v0.0.1-pre.1","v0.0.1-pre.2"]'), inputs.candidate_tag || github.ref_name) }}
 
   package:
-    needs: validate
+    needs: [resolve, validate]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
           fetch-depth: 0
+          path: source
           persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
-          go-version: 1.27.4
+          go-version: ${{ env.RELEASE_GO }}
           cache: false
-      - name: Validate tag
-        if: env.SOURCE_TAG != ''
-        run: |
-          [[ "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
-          git checkout --detach "refs/tags/$SOURCE_TAG"
-          git merge-base --is-ancestor HEAD origin/main
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de
         with:
           version: v2.20.3
+          workdir: source
           args: release --clean --skip=publish ${{ env.SOURCE_TAG == '' && '--snapshot' || '' }}
-      - name: Check the binaries built by the release compiler
+        env:
+          GORELEASER_CURRENT_TAG: ${{ env.SOURCE_TAG }}
+      - name: Prepare the checksummed bundle and scan the exact binaries
+        env:
+          SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
         run: |
-          if test -f THIRD-PARTY-NOTICES.txt; then
-            python - <<'PYTHON'
+          python - <<'PYTHON'
           import pathlib, subprocess
           goroot = pathlib.Path(subprocess.check_output(["go", "env", "GOROOT"], text=True).strip())
-          notices = pathlib.Path("THIRD-PARTY-NOTICES.txt").read_bytes()
-          for name in ["LICENSE", "PATENTS"]:
-              if (goroot / name).read_bytes().strip() not in notices:
-                  raise SystemExit(f"Review notices for the release compiler: {name} changed")
+          path = pathlib.Path("source/THIRD-PARTY-NOTICES.txt")
+          if path.exists():
+              for name in ["LICENSE", "PATENTS"]:
+                  if (goroot / name).read_bytes().strip() not in path.read_bytes():
+                      raise SystemExit(f"Review notices for the release compiler: {name} changed")
           PYTHON
-          fi
-          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
-          for binary in dist/receipts_*/*; do
-            "$(go env GOPATH)/bin/govulncheck" -mode=binary "$binary"
-          done
-      - run: python packaging/prepare.py dist bundle
-      - name: Bind tagged source and compiler to the attested bundle
-        shell: python
-        run: |
-          import hashlib, json, os, pathlib, subprocess
-          record = {"source_commit": subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
-                    "source_tag": os.environ["SOURCE_TAG"], "workflow_commit": os.environ["GITHUB_SHA"],
-                    "compiler": subprocess.check_output(["go","version"],text=True).strip()}
-          path = pathlib.Path("bundle/build-record.json")
-          path.write_text(json.dumps(record,sort_keys=True)+"\n")
-          with open("bundle/checksums.txt","a") as checks:
-              print(hashlib.sha256(path.read_bytes()).hexdigest(),path.name,sep="  ",file=checks)
+          GOBIN="$RUNNER_TEMP/tools" go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          python packaging/prepare.py source/dist bundle --tag "$SOURCE_TAG" --commit "$SOURCE_COMMIT" \
+            --workflow "$WORKFLOW_COMMIT" --compiler "go$RELEASE_GO" --scanner "$RUNNER_TEMP/tools/govulncheck"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: candidate
           path: bundle/
           if-no-files-found: error
+
   install:
-    needs: package
+    needs: [resolve, package]
     permissions:
       contents: read
       attestations: read
     uses: ./.github/workflows/consumer.yml
     with:
-      candidate_revision: ${{ inputs.candidate_tag && format('refs/tags/{0}', inputs.candidate_tag) || github.sha }}
+      candidate_revision: ${{ needs.resolve.outputs.commit }}
+      candidate_tag: ${{ inputs.candidate_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+
   draft:
-    needs: install
+    needs: [resolve, install]
     if: github.ref_type == 'tag' || (github.ref == 'refs/heads/main' && inputs.candidate_tag != '')
+    concurrency:
+      group: receipts-release-${{ inputs.candidate_tag || github.ref_name }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
       id-token: write
@@ -111,19 +142,54 @@ jobs:
       - name: Write limited preview notes
         run: |
           cat > "$RUNNER_TEMP/preview-notes" <<'NOTES'
-          Offline exact-quotation checker for Linux, macOS and Windows on amd64 and arm64. Download the archive for your OS, verify its checksum and provenance, extract it and run receipts --help. All six packaged binaries passed native tests on the frozen 60-case corpus.
+          Offline claim checker for Linux, macOS and Windows on amd64 and arm64. Download the archive for your OS, verify its checksum and provenance, extract it and run receipts --help.
 
-          This is an unsigned limited preview. macOS Developer ID signing/notarization and Windows Authenticode are unavailable. The release includes GitHub build attestations and a build record identifying the tagged source, compiler and build workflow. Verify checksums.txt with gh attestation verify against valasme/receipts before trusting its hashes.
+          This is an unsigned limited preview. The checksum manifest and build record carry GitHub build attestations. See the release documentation for verification, installation and removal.
 
-          Linux deb/rpm packages and experimental Homebrew, Scoop and WinGet manifests are included. Stable package indexes and live PR comments are outside this preview. A completed receipt can be Verified, Contradicted or Can't check. The verdict applies to the supplied quotation only.
+          Linux deb/rpm packages and experimental Homebrew, Scoop and WinGet manifests are included. Try the archive if a preview installer is unavailable.
           NOTES
-      - name: Stage a prerelease for owner review
+      - name: Stage the qualified prerelease for owner review
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
         run: |
-          python packaging/stage.py "$SOURCE_TAG" bundle "$RUNNER_TEMP/preview-notes"
-      - name: Publish approved limited preview
-        if: github.ref == 'refs/heads/main' && inputs.publish_limited
+          python packaging/stage.py stage "$SOURCE_TAG" bundle --commit "$SOURCE_COMMIT" \
+            --workflow "$WORKFLOW_COMMIT" --notes "$RUNNER_TEMP/preview-notes"
+
+  promote:
+    needs: resolve
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.draft_id != ''
+    concurrency:
+      group: receipts-release-${{ inputs.candidate_tag || github.ref_name }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Publish the reviewed draft
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
+          DRAFT_ID: ${{ inputs.draft_id }}
+          CANDIDATE_CHECKSUM: ${{ inputs.candidate_checksum }}
+        run: |
+          python packaging/stage.py promote "$SOURCE_TAG" --commit "$SOURCE_COMMIT" \
+            --release-id "$DRAFT_ID" --checksum "$CANDIDATE_CHECKSUM"
+
+  public-install:
+    needs: [resolve, promote]
+    permissions:
+      contents: read
+      attestations: read
+    uses: ./.github/workflows/consumer.yml
+    with:
+      tag: ${{ inputs.candidate_tag }}
+      expected_commit: ${{ needs.resolve.outputs.commit }}
+      expected_checksum: ${{ inputs.candidate_checksum }}

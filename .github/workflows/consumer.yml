@@ -3,8 +3,15 @@ on:
   workflow_call:
     inputs:
       candidate_revision:
-        description: Test the candidate artifact built by this workflow run
-        required: true
+        description: Pinned source commit of the candidate artifact built by this run
+        type: string
+      candidate_tag:
+        type: string
+      tag:
+        type: string
+      expected_commit:
+        type: string
+      expected_checksum:
         type: string
   release:
     types: [published]
@@ -19,7 +26,7 @@ on:
         type: string
         default: ''
       windows_only:
-        description: Repeat just the Windows consumers
+        description: Repeat just the Windows fresh-install consumers (no effect on transitions)
         type: boolean
         default: false
 permissions:
@@ -35,125 +42,78 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
-      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.candidate_tag || github.event.release.tag_name || inputs.tag }}
       CANDIDATE: ${{ inputs.candidate_revision }}
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ inputs.candidate_revision || format('refs/tags/{0}', github.event.release.tag_name || inputs.tag) }}
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         if: inputs.candidate_revision != ''
         with:
           name: candidate
           path: bundle
-      - name: Retrieve the public release and verify its signed manifest
+      - id: public
+        name: Retrieve and authenticate the complete public bundle
         if: inputs.candidate_revision == ''
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          EXPECTED_CHECKSUM: ${{ inputs.expected_checksum }}
         run: |
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir bundle
-          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
-          jq -e --arg tag "$TAG" --arg commit "$commit" '.source_tag == $tag and .source_commit == $commit' bundle/build-record.json
-          gh attestation verify bundle/build-record.json --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-digest "$(jq -r .workflow_commit bundle/build-record.json)"
-          gh attestation verify bundle/checksums.txt --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-digest "$(jq -r .workflow_commit bundle/build-record.json)"
+          args=()
+          if [[ -n "$EXPECTED_COMMIT" ]]; then args+=(--commit "$EXPECTED_COMMIT"); fi
+          if [[ -n "$EXPECTED_CHECKSUM" ]]; then args+=(--checksum "$EXPECTED_CHECKSUM"); fi
+          python packaging/stage.py public "$TAG" bundle "${args[@]}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.candidate_revision || steps.public.outputs.commit }}
+          path: source
+          persist-credentials: false
       - id: archive
-        run: python tests/package_smoke.py bundle
+        shell: bash
         env:
-          RECEIPTS_NATIVE_ARCH: ${{ runner.arch }}
-      - name: Install the preview Homebrew formula
-        if: runner.os == 'macOS'
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: '1'
-          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+          SOURCE_COMMIT: ${{ inputs.candidate_revision || steps.public.outputs.commit }}
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
         run: |
-          unzip -q bundle/preview-installers.zip -d manifests
-          brew tap-new --no-git valasme/receipts-preview
-          tap=$(brew --repository valasme/receipts-preview)
-          mkdir -p "$tap/Formula"
-          cp manifests/Formula/receipts.rb "$tap/Formula/receipts.rb"
-          if brew command trust >/dev/null 2>&1; then
-            brew trust --formula valasme/receipts-preview/receipts
-          fi
-          if [[ -n "$CANDIDATE" ]]; then
-            cache=$(brew --cache --build-from-source valasme/receipts-preview/receipts)
-            mkdir -p "$(dirname "$cache")"
-            arch=$(uname -m)
-            if [[ "$arch" == x86_64 ]]; then arch=amd64; fi
-            cp bundle/*_darwin_"$arch".tar.gz "$cache"
-          fi
-          brew install --build-from-source valasme/receipts-preview/receipts
-          brew test valasme/receipts-preview/receipts
-          brew uninstall receipts
-          brew untap valasme/receipts-preview
-      - name: Verify Debian installation
-        if: runner.os == 'Linux'
-        run: |
-          arch=$(dpkg --print-architecture)
-          sudo dpkg -i bundle/*_linux_"$arch".deb
-          /usr/bin/receipts --version
-          if test -f tests/installed_licenses.py; then
-            python tests/installed_licenses.py /usr/bin/receipts /usr/share/doc/receipts/copyright
-          fi
-          sudo dpkg -r receipts
-          test ! -e /usr/bin/receipts
-          test ! -e /usr/share/doc/receipts/THIRD-PARTY-NOTICES.txt
-      - name: Verify RPM installation in an isolated package root
+          args=()
+          if [[ -n "$CANDIDATE" ]]; then args+=(--workflow "$WORKFLOW_COMMIT"); fi
+          python tests/package_smoke.py bundle source --tag "$TAG" --commit "$SOURCE_COMMIT" "${args[@]}"
+      - name: Set up the RPM package manager
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq rpm
-          root=$(mktemp -d)
-          arch=$(dpkg --print-architecture)
-          sudo rpm --root "$root" --initdb
-          sudo rpm --root "$root" --nodeps --ignorearch -i bundle/*_linux_"$arch".rpm
-          "$root/usr/bin/receipts" --version
-          if test -f tests/installed_licenses.py; then
-            python tests/installed_licenses.py "$root/usr/bin/receipts" "$root/usr/share/licenses/receipts/LICENSE"
-          fi
-          sudo rpm --root "$root" -e receipts
-          test ! -e "$root/usr/bin/receipts"
-          test ! -e "$root/usr/share/licenses/receipts/THIRD-PARTY-NOTICES.txt"
-      - name: Exercise the preview WinGet manifest
+      - name: Qualify native package installs using the archived binary and offline fixture
+        if: runner.os != 'Windows'
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        env:
+          SOURCE_COMMIT: ${{ inputs.candidate_revision || steps.public.outputs.commit }}
+        run: |
+          args=()
+          if [[ -n "$CANDIDATE" ]]; then args+=(--source "$GITHUB_WORKSPACE/source"); fi
+          channels=(brew)
+          if [[ "$RUNNER_OS" == Linux ]]; then channels=(deb rpm); fi
+          failed=0
+          for channel in "${channels[@]}"; do
+            python "$GITHUB_WORKSPACE/tests/preview_transition.py" install "$channel" "$GITHUB_WORKSPACE/bundle" \
+              --tag "$TAG" --commit "$SOURCE_COMMIT" "${args[@]}" || failed=1
+          done
+          exit "$failed"
+      - name: Enable local WinGet manifests
+        id: winget
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          Expand-Archive bundle/preview-installers.zip -DestinationPath manifests
-          if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
-            gh release download v1.29.380 --repo microsoft/winget-cli --dir winget-bootstrap -p DesktopAppInstaller_Dependencies.zip -p Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            Expand-Archive winget-bootstrap/DesktopAppInstaller_Dependencies.zip -DestinationPath winget-bootstrap/deps
-            $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { 'x64' }
-            $deps = @(Get-ChildItem -Recurse winget-bootstrap/deps -Include *.appx,*.msix | Where-Object { $_.FullName -match "[\\/]$arch[\\/]" } | ForEach-Object { $_.FullName })
-            Add-AppxPackage -Path winget-bootstrap/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle -DependencyPath $deps -ForceApplicationShutdown
-            $installer = Get-AppxPackage Microsoft.DesktopAppInstaller
-            $env:PATH = "$($installer.InstallLocation);$env:PATH"
-          }
-          winget settings --enable LocalManifestFiles
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          winget validate --manifest manifests/winget
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if ($env:CANDIDATE) {
-            $manifest = Get-Content manifests/bucket/receipts.json -Raw | ConvertFrom-Json
-            $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { 'amd64' }
-            $archive = Get-Item "bundle/*_windows_${arch}.zip"
-            $cache = Join-Path ([IO.Path]::GetTempPath()) "WinGet/Valasme.Receipts.Preview.$($manifest.version)"
-            New-Item -ItemType Directory -Force $cache | Out-Null
-            Copy-Item $archive.FullName (Join-Path $cache (Get-FileHash $archive.FullName).Hash)
-          }
-          winget install --manifest manifests/winget --scope user --accept-source-agreements --accept-package-agreements --disable-interactivity
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe" --version
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if (Test-Path tests/installed_licenses.py) {
-            python tests/installed_licenses.py "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
-          winget uninstall --name "Receipts Preview" --exact --scope user --accept-source-agreements --disable-interactivity
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if (Test-Path "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe") { throw 'WinGet alias survived uninstall' }
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tests/windows_installers.ps1 winget
       - name: Retrieve the Scoop installer
+        id: scoop-bootstrap
         if: "!cancelled() && runner.os == 'Windows' && steps.archive.outcome == 'success'"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -161,64 +121,47 @@ jobs:
           ref: 1e2f334083d609986d8c8bc9e31ae8e87c39fab4
           path: scoop-bootstrap
           persist-credentials: false
-      - name: Exercise Scoop preview manifest in an isolated user tree
-        if: "!cancelled() && runner.os == 'Windows' && steps.archive.outcome == 'success'"
+      - name: Bootstrap isolated Scoop
+        id: scoop
+        if: "!cancelled() && steps.scoop-bootstrap.outcome == 'success'"
         shell: pwsh
+        run: ./tests/windows_installers.ps1 scoop
+      - name: Qualify Windows package installs using the archived binary and offline fixture
+        if: "!cancelled() && runner.os == 'Windows' && steps.archive.outcome == 'success'"
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        env:
+          SOURCE_COMMIT: ${{ inputs.candidate_revision || steps.public.outputs.commit }}
+          WINGET_READY: ${{ steps.winget.outcome == 'success' }}
+          SCOOP_READY: ${{ steps.scoop.outcome == 'success' }}
         run: |
-          $env:SCOOP = Join-Path $env:RUNNER_TEMP 'receipts-scoop'
-          & ./scoop-bootstrap/install.ps1 -ScoopDir $env:SCOOP -RunAsAdmin
-          $scoop = Join-Path $env:SCOOP 'shims/scoop.ps1'
-          Expand-Archive bundle/preview-installers.zip -DestinationPath scoop-input
-          if ($env:CANDIDATE) {
-            $manifest = Get-Content scoop-input/bucket/receipts.json -Raw | ConvertFrom-Json
-            $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { '64bit' }
-            $url = $manifest.architecture.$arch.url
-            $cacheKey = $url -replace '[^\w.\-]+', '_'
-            $cache = Join-Path $env:SCOOP 'cache'
-            New-Item -ItemType Directory -Force $cache | Out-Null
-            Copy-Item (Join-Path 'bundle' ([IO.Path]::GetFileName($url))) (Join-Path $cache "receipts#$($manifest.version)#$cacheKey")
-          }
-          & $scoop install (Resolve-Path 'scoop-input/bucket/receipts.json').Path
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & "$env:SCOOP/apps/receipts/current/receipts.exe" --version
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if (Test-Path tests/installed_licenses.py) {
-            $app = "$env:SCOOP/apps/receipts/current"
-            python tests/installed_licenses.py "$app/receipts.exe" "$app/LICENSE"
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
-          & $scoop uninstall receipts
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if (Test-Path "$env:SCOOP/shims/receipts.exe") { throw 'Scoop shim survived uninstall' }
+          args=()
+          if [[ -n "$CANDIDATE" ]]; then args+=(--source "$GITHUB_WORKSPACE/source"); fi
+          failed=0
+          for channel in winget scoop; do
+            if [[ "$channel" == winget && "$WINGET_READY" != true ]]; then continue; fi
+            if [[ "$channel" == scoop && "$SCOOP_READY" != true ]]; then continue; fi
+            python "$GITHUB_WORKSPACE/tests/preview_transition.py" install "$channel" "$GITHUB_WORKSPACE/bundle" \
+              --tag "$TAG" --commit "$SOURCE_COMMIT" "${args[@]}" || failed=1
+          done
+          exit "$failed"
       - if: "!cancelled() && steps.archive.outcome == 'success'"
+        id: go
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
-          go-version: 1.27.4
+          go-version: '1.27.4'
           cache: false
-      - name: Install the Go module
-        if: "!cancelled() && steps.archive.outcome == 'success'"
+      - name: Qualify an isolated Go install
+        if: "!cancelled() && steps.go.outcome == 'success'"
         shell: bash
+        working-directory: ${{ runner.temp }}
         env:
-          GOPROXY: direct
+          SOURCE_COMMIT: ${{ inputs.candidate_revision || steps.public.outputs.commit }}
         run: |
-          license_test="$PWD/tests/installed_licenses.py"
-          if [[ -n "$CANDIDATE" ]]; then
-            go install ./cmd/receipts
-          else
-            cd "$RUNNER_TEMP"
-            go install "github.com/valasme/receipts/cmd/receipts@$TAG"
-          fi
-          cd "$RUNNER_TEMP"
-          installed="$(go env GOPATH)/bin/receipts"
-          if [[ "$RUNNER_OS" == Windows ]]; then installed="$(cygpath -u "$installed").exe"; fi
-          "$installed" --help
-          if [[ -z "$CANDIDATE" ]]; then
-            [[ "$("$installed" --version)" == "receipts $TAG" ]]
-          fi
-          if [[ -f "$license_test" ]]; then
-            python "$license_test" "$installed"
-          fi
-          rm "$installed"
+          args=()
+          if [[ -n "$CANDIDATE" ]]; then args+=(--source "$GITHUB_WORKSPACE/source"); fi
+          python "$GITHUB_WORKSPACE/tests/preview_transition.py" install go "$GITHUB_WORKSPACE/bundle" \
+            --tag "$TAG" --commit "$SOURCE_COMMIT" "${args[@]}"
   transition:
     if: github.event_name == 'workflow_dispatch' && inputs.previous_tag != ''
     runs-on: ${{ matrix.os }}
@@ -261,12 +204,10 @@ jobs:
           persist-credentials: false
       - name: Download and authenticate both public previews
         shell: bash
+        working-directory: ${{ runner.temp }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pattern='^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$'
-          [[ "$CURRENT_TAG" =~ $pattern && "$PREVIOUS_TAG" =~ $pattern && "$CURRENT_TAG" != "$PREVIOUS_TAG" ]]
-          cd "$RUNNER_TEMP"
           python "$GITHUB_WORKSPACE/tests/preview_transition.py" retrieve "$PREVIOUS_TAG" "$CURRENT_TAG"
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         if: matrix.channel == 'go'
@@ -282,22 +223,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $winget = Get-Command winget -ErrorAction SilentlyContinue
-          if ($winget) {
-            $path = $winget.Source
-          } else {
-            gh release download v1.29.380 --repo microsoft/winget-cli --dir winget-bootstrap -p DesktopAppInstaller_Dependencies.zip -p Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            Expand-Archive winget-bootstrap/DesktopAppInstaller_Dependencies.zip -DestinationPath winget-bootstrap/deps
-            $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { 'x64' }
-            $deps = @(Get-ChildItem -Recurse winget-bootstrap/deps -Include *.appx,*.msix | Where-Object { $_.FullName -match "[\\/]$arch[\\/]" } | ForEach-Object { $_.FullName })
-            Add-AppxPackage -Path winget-bootstrap/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle -DependencyPath $deps -ForceApplicationShutdown
-            $path = Join-Path (Get-AppxPackage Microsoft.DesktopAppInstaller).InstallLocation 'winget.exe'
-          }
-          & $path settings --enable LocalManifestFiles
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          "RECEIPTS_WINGET=$path" >> $env:GITHUB_ENV
+        run: ./tests/windows_installers.ps1 winget
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: matrix.channel == 'scoop'
         with:
@@ -308,13 +234,9 @@ jobs:
       - name: Bootstrap isolated Scoop
         if: matrix.channel == 'scoop'
         shell: pwsh
-        run: |
-          $env:SCOOP = Join-Path $env:RUNNER_TEMP 'receipts-scoop'
-          & ./scoop-bootstrap/install.ps1 -ScoopDir $env:SCOOP -RunAsAdmin
-          if (!(Test-Path "$env:SCOOP/shims/scoop.ps1")) { throw 'Scoop installation failed' }
-          "SCOOP=$env:SCOOP" >> $env:GITHUB_ENV
+        run: ./tests/windows_installers.ps1 scoop
       - name: Exercise install, upgrade, restore and removal from outside the checkout
         shell: bash
+        working-directory: ${{ runner.temp }}
         run: |
-          cd "$RUNNER_TEMP"
-          python "$GITHUB_WORKSPACE/tests/preview_transition.py" "$CHANNEL" "$PREVIOUS_TAG" "$CURRENT_TAG"
+          python "$GITHUB_WORKSPACE/tests/preview_transition.py" transition "$CHANNEL" "$PREVIOUS_TAG" "$CURRENT_TAG"
