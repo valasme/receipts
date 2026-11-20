@@ -121,7 +121,11 @@ Use `receipts check --help` for quotation input and output options, or `receipts
 
 ## Supported storage and limits
 
-Use a regular local clone or bare SHA-1 repository. Receipts reads loose objects, v2 indexes, packed objects and bounded offset deltas. Reference deltas, alternate object databases and linked worktree indirections may return an inconclusive receipt. Quotation checks leave symlinks, submodules, LFS pointers and binary source unsupported. Reads never invoke Git or execute submitted code. The checker accepts a 64 KiB normalized quote, an 8 MiB source and up to 128 path components. Conservative limits on index bytes, total decoded bytes and a five-second object lookup deadline also apply.
+Use a regular local clone or bare SHA-1 repository. Omit `--repo` to search upward from the current directory. An explicit `--repo` selects only the supplied clone root, bare repository, or Git directory. Keep `--path` relative to the repository root at any working directory. Linked worktrees and separate Git directory pointers yield `unsupported_storage`. Use the regular clone or a self-contained bare repository for those commits.
+
+Receipts reads loose objects, v2 pack indexes and packed objects with up to 16 offset-delta levels. A missing object that needs an alternate database or an unsupported pack representation remains inconclusive. The receipt identifies unsupported storage, including SHA-256, version 1 pack indexes and reference deltas, when detected. Reads stay local and ignore replace refs. Quotation checks leave symlinks, submodules, Git LFS v1 pointers and binary source unsupported.
+
+The five-second object-access and comparison deadline begins after input is read and parsed. A named input or stdin can wait for data until it finishes or you interrupt the command. One command shares the deadline and the repository budgets across all its claims. Limits include 8 MiB per decoded object, 4 MiB per pack index and 256 KiB for local Git config, with totals of 32 MiB of decoded objects and index data processed, 64 MiB of filesystem bytes read, and 4,096 filesystem operations. A pack directory scan allows 4,096 entries and up to 256 index candidates. A tree allows 32,768 entries and one command can inspect 131,072 entries across all its lookups. The `resource_limit` reason includes the limiting resource in `detail`.
 
 ## Contribute and report problems
 

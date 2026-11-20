@@ -89,7 +89,7 @@ func (s *store) reader(r io.Reader) io.Reader {
 	return budgetedReader{s.ctx, &s.readBytes, r}
 }
 
-func (s *store) readBounded(r io.Reader, limit int64, limitErr limitError) ([]byte, error) {
+func (s *store) readBounded(r io.Reader, limit int64, limitErr error) ([]byte, error) {
 	if s.ctx.Err() != nil {
 		return nil, timeLimit
 	}

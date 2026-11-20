@@ -162,6 +162,9 @@ func (s *store) loadPacks() error {
 		return errObject
 	}
 	defer f.Close()
+	if err := s.filesystemOp(); err != nil {
+		return err
+	}
 	entries, err := f.ReadDir(maxPackEntries + 1)
 	if err != nil && err != io.EOF {
 		return errObject

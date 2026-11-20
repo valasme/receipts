@@ -122,7 +122,7 @@ func inspectQuote(s *store, r Receipt, quote []byte) (Receipt, error) {
 		if errors.Is(err, errNotCommit) {
 			return Receipt{}, err
 		}
-		if errors.Is(err, errCommitTree) {
+		if errors.Is(err, errCommitStructure) {
 			r.Reason = "object_unavailable"
 		}
 		return unresolved(r, err), nil
@@ -131,6 +131,9 @@ func inspectQuote(s *store, r Receipt, quote []byte) (Receipt, error) {
 	r.Reason = "object_unavailable"
 	entry, err := s.findPath(treeID, path)
 	if err != nil {
+		if entry.id != "" {
+			r.Evidence.recordEntry(entry)
+		}
 		return unresolved(r, err), nil
 	}
 	if entry.id == "" {
@@ -225,7 +228,7 @@ func lookup(data []byte, wanted string, remaining *int) (string, string, error) 
 		if *remaining == 0 {
 			return "", "", treeWorkLimit
 		}
-		*remaining--
+		(*remaining)--
 		field, tail, ok := bytes.Cut(data, []byte{0})
 		if !ok || len(tail) < 20 {
 			return "", "", errObject

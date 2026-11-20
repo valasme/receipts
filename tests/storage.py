@@ -1,8 +1,10 @@
 """Additional black-box storage and budget tests; requires working Git."""
 
+import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import zlib
 from pathlib import Path
@@ -40,7 +42,9 @@ def exercise(repo):
     git(repo, "add", "log.txt")
     git(repo, "commit", "-qm", "too large")
     rev = git(repo, "rev-parse", "HEAD")
-    assert check(repo, rev, "log.txt", b"!")["reason"] == "resource_limit"
+    limited = check(repo, rev, "log.txt", b"!")
+    assert limited["reason"] == "resource_limit" and "uncompressed object size" in limited["detail"]
+    assert "uncompressed object size" in check(repo, rev, "log.txt", b"!", "text")
     tree = git(repo, "rev-parse", "HEAD^{tree}")
     loose = repo / ".git/objects" / tree[:2] / tree[2:]
     loose.chmod(0o600)
@@ -132,6 +136,89 @@ def special_object(repo):
         assert result.returncode == 0 and b"unsupported_storage" in result.stdout
 
 
+def filesystem_budget(repo):
+    git(repo, "init", "-q", "--object-format=sha1")
+    blob = raw_object(repo, "blob", b"x")
+    tree = raw_object(repo, "tree", b"100644 item\0" + bytes.fromhex(blob))
+    for _ in range(127):
+        tree = raw_object(repo, "tree", b"40000 sub\0" + bytes.fromhex(tree))
+    rev = git(repo, "commit-tree", tree, "-m", "filesystem budget")
+    path = "sub/" * 127 + "item"
+    assert check(repo, rev, path, b"x")["verdict"] == "verified"
+    batch = {"schema_major": 1, "rev": rev, "claims": [{"path": path, "quote": "x"}] * 16}
+    output = subprocess.check_output(
+        [binary, "check", "--repo", repo, "--batch-file", "-"], input=json.dumps(batch).encode()
+    )
+    results = [item["receipt"] for item in json.loads(output)["results"]]
+    assert [r["verdict"] for r in results] == ["verified"] * 10 + ["cant_check"] * 6
+    assert results[-1]["reason"] == "resource_limit"
+    assert "filesystem operations" in results[-1]["detail"]
+
+
+def index_budgets(repo):
+    git(repo, "init", "-q", "--object-format=sha1")
+    packdir = repo / ".git/objects/pack"
+    request = ("0" * 40, "item", b"x")
+    oversized = packdir / "pack-oversized.idx"
+    with oversized.open("wb") as index:
+        index.truncate((4 << 20) + 1)
+    r = check(repo, *request)
+    assert r["reason"] == "resource_limit" and "pack index size" in r["detail"], r
+    oversized.unlink()
+    for i in range(257):
+        (packdir / f"pack-{i:040x}.idx").touch()
+    r = check(repo, *request)
+    assert r["reason"] == "resource_limit" and "pack index candidates" in r["detail"], r
+    for i in range(4097 - 257):
+        (packdir / f"auxiliary-{i:04d}").touch()
+    r = check(repo, *request)
+    assert r["reason"] == "resource_limit" and "pack directory entries" in r["detail"], r
+
+
+def byte_budgets(repo):
+    git(repo, "init", "-q", "--object-format=sha1")
+    config = repo / ".git/config"
+    original = config.read_bytes()
+    config.write_bytes(original + b" " * (256 << 10))
+    r = check(repo, "0" * 40, "item", b"x")
+    assert r["reason"] == "resource_limit" and "Git config size" in r["detail"], r
+    config.write_bytes(original)
+    paths = [f"large-{i}" for i in range(5)]
+    entries = []
+    for path in paths:
+        blob = raw_object(repo, "blob", path.encode() + b"x" * (7 << 20))
+        entries.append(f"100644 blob {blob}\t{path}\n")
+    tree = subprocess.check_output(
+        ["git", "-C", repo, "mktree"], input="".join(entries).encode(), env=env
+    ).strip().decode()
+    rev = git(repo, "commit-tree", tree, "-m", "cumulative object bytes")
+    batch = {"schema_major": 1, "rev": rev, "claims": [{"path": p, "quote": "x"} for p in paths]}
+    output = subprocess.check_output(
+        [binary, "check", "--repo", repo, "--batch-file", "-"], input=json.dumps(batch).encode()
+    )
+    results = [item["receipt"] for item in json.loads(output)["results"]]
+    assert [r["verdict"] for r in results] == ["verified"] * 4 + ["cant_check"]
+    assert results[-1]["reason"] == "resource_limit"
+    assert "cumulative object and index bytes" in results[-1]["detail"]
+
+    if sys.platform == "linux":
+        # A valid zlib stream can consume far more input than it emits.
+        # Use empty stored blocks to keep decoded work below the other limits.
+        body = b"commit 0\0"
+        oid = raw_object(repo, "commit", b"")
+        leaf = repo / ".git/objects" / oid[:2] / oid[2:]
+        leaf.chmod(0o600)
+        block = b"\x00\x00\x00\xff\xff"
+        canonical = zlib.compress(body, level=0)
+        with leaf.open("wb") as out:
+            out.write(canonical[:2])
+            for _ in range(65):
+                out.write(block * ((1 << 20) // len(block)))
+            out.write(canonical[2:])
+        r = check(repo, oid, "item", b"x")
+        assert r["reason"] == "resource_limit" and "cumulative filesystem bytes" in r["detail"], r
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as d:
         exercise(Path(d))
@@ -139,4 +226,10 @@ if __name__ == "__main__":
         packed_candidates(Path(d))
     with tempfile.TemporaryDirectory() as d:
         special_object(Path(d))
-    print("Deltas, pack candidates, damaged and absent objects, file types, and byte limits passed")
+    with tempfile.TemporaryDirectory() as d:
+        filesystem_budget(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        index_budgets(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        byte_budgets(Path(d))
+    print("Deltas, pack candidates, damaged and absent objects, file types, and resource limits passed")

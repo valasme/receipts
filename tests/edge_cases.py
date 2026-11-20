@@ -196,6 +196,7 @@ def quote_witnesses(repo):
         f"120000 blob {text}\tlink",
         f"100644 blob {missing}\tmissing",
         f"040000 tree {repeated_tree}\trepeat",
+        f"040000 tree {missing}\tunavailable-dir",
         f"160000 commit {submodule}\tmodule",
     ]
     tree = subprocess.check_output(
@@ -217,6 +218,7 @@ def quote_witnesses(repo):
     for path, component in [
         ("link", "link"), ("link/item", "link"), ("repeat", "repeat"),
         ("missing", "missing"), ("module", "module"),
+        ("unavailable-dir/item", "unavailable-dir"),
     ]:
         git_mode, _, entry_id = git(repo, "ls-tree", rev, "--", component).split()[:3]
         mode = git_mode.lstrip("0")
@@ -255,11 +257,18 @@ def storage_selection(root):
     rev = git(repo, "rev-parse", "HEAD")
     baseline = check(repo, rev, "item", b"original")
     bare = root / "bare.git"
-    git(root, "clone", "-q", "--bare", "--no-local", str(repo), str(bare))
+    git(root, "clone", "-q", "--bare", "--no-hardlinks", str(repo), str(bare))
+    request = [binary, "check", "--rev", rev, "--path", "item", "--quote-file", "-", "--format", "json"]
+    quote = b"original"
+    expected = subprocess.check_output(request + ["--repo", repo], input=quote)
+    assert subprocess.check_output(request + ["--repo", bare], input=quote) == expected
     git(bare, "repack", "-Adq")
     git(bare, "prune-packed")
     assert list((bare / "objects" / "pack").glob("*.idx"))
-    assert check(bare, rev, "item", b"original") == baseline
+    assert subprocess.check_output(request, cwd=bare, input=quote) == expected
+    assert subprocess.check_output(request + ["--repo", bare], input=quote) == expected
+    outside = json.loads(subprocess.check_output(request, cwd=root, input=quote))
+    assert outside["reason"] == "repository_unavailable"
 
     (repo / "item").write_bytes(b"replacement")
     git(repo, "commit", "-qam", "replacement")
@@ -268,6 +277,11 @@ def storage_selection(root):
     assert git(repo, "cat-file", "blob", f"{rev}:item") == "replacement"
     assert git(repo, "--no-replace-objects", "cat-file", "blob", f"{rev}:item") == "original"
     assert check(repo, rev, "item", b"original") == baseline
+
+    shallow = root / "shallow"
+    git(root, "clone", "-q", "--no-local", "--depth=1", str(repo), str(shallow))
+    assert git(shallow, "rev-parse", "--is-shallow-repository") == "true"
+    assert check(shallow, replacement, "item", b"replacement")["verdict"] == "verified"
 
     linked = root / "linked"
     git(repo, "worktree", "add", "-q", "--detach", str(linked), replacement)
@@ -279,6 +293,15 @@ def storage_selection(root):
 
     assert check(root, rev, "item", b"x")["reason"] == "repository_unavailable"
     assert check(root / "missing", rev, "item", b"x")["reason"] == "repository_unavailable"
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        metadata = repo / ".git"
+        metadata.chmod(0)
+        try:
+            r = check(repo, rev, "item", b"x")
+            assert r["reason"] == "repository_unavailable" and "metadata is inaccessible" in r["detail"], r
+            assert "--repo" not in r["detail"] and str(repo) not in r["detail"]
+        finally:
+            metadata.chmod(0o755)
     (repo / ".git" / "objects").rename(repo / ".git" / "objects-old")
     r = check(repo, rev, "item", b"x")
     assert r["reason"] == "repository_unavailable" and "object directory" in r["detail"], r
@@ -293,7 +316,12 @@ def storage_selection(root):
     git(root, "init", "-q", "--object-format=sha256", str(sha256))
     r = check(sha256, rev, "item", b"x")
     assert r["reason"] == "unsupported_storage" and "SHA-256" in r["detail"], r
-    for malformed, diagnostic in [("g" * 64, b"hexadecimal"), ("0" * 64, b"SHA-256")]:
+    (sha256 / "item").write_bytes(b"sha256")
+    git(sha256, "add", "item")
+    git(sha256, "commit", "-qm", "sha256 history")
+    oid = git(sha256, "rev-parse", "HEAD")
+    assert len(oid) == 64
+    for malformed, diagnostic in [("g" * 64, b"hexadecimal"), (oid, b"SHA-256")]:
         r = subprocess.run(
             [binary, "check", "--repo", sha256, "--rev", malformed, "--path", "item",
              "--quote-file", "-"],

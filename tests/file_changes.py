@@ -142,6 +142,21 @@ def compare_modes_and_kinds(binary, repo):
     assert f"Tree {child} · mode 100644 · Blob {child_blob}" in receipts["dir/item.txt"]
 
 
+def reuse_comparison_blobs(binary, repo):
+    # Three distinct 7 MiB blobs fit the shared 32 MiB budget only if
+    # comparing the same blob at both commits reuses its verification.
+    paths = ["large-a", "large-b", "large-c"]
+    comparison = commit(repo, {path: path.encode() + b"x" * (7 << 20) for path in paths})
+    head = commit(repo, {}, comparison, extra=tuple(
+        f"100755 blob {git(repo, 'rev-parse', comparison + ':' + path)}\t{path}\n"
+        for path in paths
+    ))
+    observed = check_changes(binary, repo, comparison, head, dict.fromkeys(paths, "Verified"))
+    for result in observed.values():
+        assert "mode 100644 · Blob " in result and "mode 100755 · Blob " in result
+
+
+
 def unavailable_objects(binary, repo, comparison, head):
     missing_commit = "1" * 40
     absent = subprocess.run(
@@ -219,6 +234,7 @@ def run(binary, repo):
     git(repo, "init", "-q", "--template=", "--object-format=sha1")
     comparison, head = compare_paths(binary, repo)
     compare_modes_and_kinds(binary, repo)
+    reuse_comparison_blobs(binary, repo)
     validate_proposals(binary, repo, comparison, head)
     unavailable_objects(binary, repo, comparison, head)
 

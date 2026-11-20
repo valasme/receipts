@@ -91,7 +91,7 @@ func (side *fileObservation) inspect(s *store, path string) error {
 		switch {
 		case errors.Is(err, errNotCommit):
 			return err
-		case errors.Is(err, errCommitTree):
+		case errors.Is(err, errCommitStructure):
 			side.failure = "object_unavailable"
 		default:
 			side.failure = objectFailure(err, "revision_unavailable")

@@ -22,7 +22,7 @@ import (
 var errObject = errors.New("object_unavailable")
 var errStorage = errors.New("unsupported_storage")
 var errNotCommit = errors.New("revision must identify a commit object." + resolveCommitHint)
-var errCommitTree = errors.New("invalid commit tree reference")
+var errCommitStructure = errors.New("invalid commit structure")
 
 type object struct {
 	kind string
@@ -73,19 +73,19 @@ func (s *store) readCommitTree(rev string) (string, error) {
 func parseCommit(data []byte) (string, error) {
 	header, rest, ok := bytes.Cut(data, []byte("\n"))
 	if !ok || !bytes.HasPrefix(header, []byte("tree ")) || !canonicalOID(header[5:]) {
-		return "", errCommitTree
+		return "", errCommitStructure
 	}
 	treeID := string(header[5:])
 	for bytes.HasPrefix(rest, []byte("parent ")) {
 		header, rest, ok = bytes.Cut(rest, []byte("\n"))
 		if !ok || !canonicalOID(header[7:]) {
-			return "", errCommitTree
+			return "", errCommitStructure
 		}
 	}
 	for _, prefix := range []string{"author ", "committer "} {
 		header, rest, ok = bytes.Cut(rest, []byte("\n"))
 		if !ok || !bytes.HasPrefix(header, []byte(prefix)) || !validIdentity(header[len(prefix):]) {
-			return "", errCommitTree
+			return "", errCommitStructure
 		}
 	}
 
@@ -93,7 +93,7 @@ func parseCommit(data []byte) (string, error) {
 	for {
 		header, rest, ok = bytes.Cut(rest, []byte("\n"))
 		if !ok || bytes.IndexByte(header, 0) >= 0 {
-			return "", errCommitTree
+			return "", errCommitStructure
 		}
 		if len(header) == 0 {
 			return treeID, nil
@@ -103,16 +103,16 @@ func parseCommit(data []byte) (string, error) {
 		}
 		key, _, found := bytes.Cut(header, []byte(" "))
 		if !found || len(key) == 0 {
-			return "", errCommitTree
+			return "", errCommitStructure
 		}
 		for _, c := range key {
 			if c <= ' ' || c >= 127 {
-				return "", errCommitTree
+				return "", errCommitStructure
 			}
 		}
 		switch string(key) {
 		case "tree", "parent", "author", "committer":
-			return "", errCommitTree
+			return "", errCommitStructure
 		}
 		optional = true
 	}
@@ -162,31 +162,32 @@ type pathEntry struct {
 
 func (s *store) findPath(treeID, path string) (pathEntry, error) {
 	full := path
+	var entry pathEntry
 	for {
 		component, rest, hasRest := strings.Cut(path, "/")
 		tree, err := s.read(treeID)
 		if err != nil {
-			return pathEntry{}, err
+			return entry, err
 		}
 		if tree.kind != "tree" {
-			return pathEntry{}, errObject
+			return entry, errObject
 		}
 		mode, id, err := lookup(tree.data, component, &s.treeWork)
 		if err != nil {
-			return pathEntry{}, err
+			return entry, err
 		}
-		if hasRest && mode == "40000" {
-			treeID, path = id, rest
-			continue
-		}
-		return pathEntry{
+		entry = pathEntry{
 			tree:      treeID,
 			mode:      mode,
 			id:        id,
 			component: component,
 			path:      full[:len(full)-len(path)+len(component)],
 			blocked:   hasRest && id != "",
-		}, nil
+		}
+		if !hasRest || mode != "40000" {
+			return entry, nil
+		}
+		treeID, path = id, rest
 	}
 }
 
@@ -224,6 +225,10 @@ func (s *store) file(name string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := s.filesystemOp(); err != nil {
+		f.Close()
+		return nil, err
+	}
 	info, err = f.Stat()
 	if err != nil || !info.Mode().IsRegular() {
 		f.Close()
@@ -235,7 +240,7 @@ func (s *store) file(name string) (*os.File, error) {
 	return f, nil
 }
 
-func (s *store) inflate(r io.Reader, limit int64, limitErr limitError) ([]byte, error) {
+func (s *store) inflate(r io.Reader, limit int64, limitErr error) ([]byte, error) {
 	if s.remaining == 0 {
 		return nil, objectBytesLimit
 	}
@@ -281,8 +286,11 @@ func (s *store) read(id string) (object, error) {
 
 func parseLoose(data []byte) (object, error) {
 	header, body, ok := bytes.Cut(data, []byte{0})
+	if !ok || len(header) > 64 {
+		return object{}, errObject
+	}
 	kind, size, split := strings.Cut(string(header), " ")
-	if !ok || !split || size != strconv.Itoa(len(body)) {
+	if !split || size != strconv.Itoa(len(body)) {
 		return object{}, errObject
 	}
 	if len(body) > maxBlob {
@@ -361,7 +369,7 @@ func (s *store) packEntry(f *os.File, offset int64, depth int) (object, error) {
 	} else if typ < 1 || typ > 4 {
 		return object{}, errObject
 	}
-	data, err := s.inflate(r, size, objectSizeLimit)
+	data, err := s.inflate(r, size, errObject)
 	if err != nil {
 		return object{}, err
 	}

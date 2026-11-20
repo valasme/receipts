@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func FuzzLookup(f *testing.F) {
@@ -106,11 +107,16 @@ func TestMalformedTrees(t *testing.T) {
 	}
 }
 func TestExpiredBudget(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	s := store{ctx: ctx}
-	if _, err := s.read(strings.Repeat("0", 40)); err != timeLimit {
-		t.Fatal(err)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	pin := strings.Repeat("0", 40)
+	r, err := Verify(ctx, t.TempDir(), pin, "item", []byte("sample"), "test")
+	if err != nil || r.Verdict != "cant_check" || r.Reason != "resource_limit" || !strings.Contains(r.Detail, "deadline") {
+		t.Fatalf("receipt %+v, error %v", r, err)
+	}
+	rChange, err := VerifyFileChange(ctx, t.TempDir(), pin, pin, "item")
+	if err != nil || !strings.Contains(rChange.Text(), "object access and comparison deadline") {
+		t.Fatalf("receipt %s, error %v", rChange.Text(), err)
 	}
 }
 
