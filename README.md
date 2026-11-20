@@ -16,21 +16,35 @@ receipts --licenses
 
 From a checkout with Go 1.25 or newer, run `go install ./cmd/receipts`. Put your Go binary directory on PATH. For an archive, verify its checksum against the release manifest, extract it and run the included executable directly. On Windows use `.\receipts.exe --help`. On Linux or macOS use `./receipts --help`. To remove an archive installation, delete the extracted files. To switch versions, keep each extraction in its own directory and select the desired binary.
 
-From the root of the Receipts repository, this POSIX example checks the README heading:
+## Try a first receipt
+
+Run this from a local clone of Receipts with the preview installed. If your clone is missing the release tag, run `git fetch origin tag v0.0.1-pre.2`. The example checks the complete first line of the README, including its final newline. The `^{commit}` suffix resolves the release tag to the commit ID Receipts needs.
+
+Linux or macOS:
 
 ```sh
-printf %s '# Receipts' > excerpt.txt
-receipts check --repo . --rev "$(git rev-parse HEAD)" --path README.md --quote-file excerpt.txt
+rev=$(git rev-parse --verify 'v0.0.1-pre.2^{commit}') &&
+  printf '%s\n' '# Receipts' |
+  receipts check --repo . --rev "$rev" --path README.md --quote-file -
 ```
 
 PowerShell:
 
 ```powershell
-[IO.File]::WriteAllText("$PWD/excerpt.txt", '# Receipts')
-receipts check --repo . --rev (git rev-parse HEAD) --path README.md --quote-file excerpt.txt
+$rev = git rev-parse --verify 'v0.0.1-pre.2^{commit}'
+if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the release tag to a commit.' }
+$quote = [IO.Path]::GetTempFileName()
+try {
+    [IO.File]::WriteAllText($quote, "# Receipts`n")
+    receipts check --repo . --rev $rev --path README.md --quote-file $quote
+} finally {
+    Remove-Item -LiteralPath $quote
+}
 ```
 
-Use a full SHA-1 commit ID, a repository-root-relative path and UTF-8 input. Pass `--quote-file -` for stdin. A final newline is significant. CRLF and LF match. Other whitespace, letter case and Unicode composition remain significant.
+Expect `Verified · exact source quote` and line 1. Change the quoted text to `# Receipts smoke test` and rerun to see `Contradicted`. Both checks exit 0 because both produced a receipt. To replay a receipt later, keep the full commit ID, the repository-relative path and the exact quote in UTF-8.
+
+Use a full SHA-1 commit ID and a repository-root-relative path for your own claims. Pass `--quote-file -` for stdin. Include the final newline if it is part of the quotation. CRLF and LF match. Other whitespace, letter case and Unicode composition remain significant.
 
 ## Read the result
 
