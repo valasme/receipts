@@ -119,10 +119,11 @@ func parseCommit(data []byte) (string, error) {
 }
 
 func canonicalOID(id []byte) bool {
-	if len(id) != 40 {
-		return false
-	}
-	for _, c := range id {
+	return len(id) == 40 && lowercaseHex(id)
+}
+
+func lowercaseHex(data []byte) bool {
+	for _, c := range data {
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
@@ -155,11 +156,12 @@ func validIdentity(data []byte) bool {
 }
 
 type pathEntry struct {
-	tree, mode, id, component string
-	blocked                   bool
+	tree, mode, id, component, path string
+	blocked                         bool
 }
 
 func (s *store) findPath(treeID, path string) (pathEntry, error) {
+	full := path
 	for {
 		component, rest, hasRest := strings.Cut(path, "/")
 		tree, err := s.read(treeID)
@@ -182,6 +184,7 @@ func (s *store) findPath(treeID, path string) (pathEntry, error) {
 			mode:      mode,
 			id:        id,
 			component: component,
+			path:      full[:len(full)-len(path)+len(component)],
 			blocked:   hasRest && id != "",
 		}, nil
 	}

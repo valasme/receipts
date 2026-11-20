@@ -61,6 +61,21 @@
           "type": "string",
           "minLength": 1
         },
+        "missing_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry_mode": {
+          "enum": ["40000", "100644", "100755", "120000", "160000"]
+        },
+        "entry_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
         "lines": {
           "type": "object",
           "properties": {

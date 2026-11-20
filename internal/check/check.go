@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -26,12 +27,16 @@ type Lines struct {
 	End   int `json:"end"`
 }
 type Evidence struct {
-	Format  string `json:"object_format,omitempty"`
-	Commit  string `json:"observed_commit,omitempty"`
-	Blob    string `json:"blob_id,omitempty"`
-	Tree    string `json:"tree_id,omitempty"`
-	Missing string `json:"missing_component,omitempty"`
-	Lines   *Lines `json:"lines,omitempty"`
+	Format      string `json:"object_format,omitempty"`
+	Commit      string `json:"observed_commit,omitempty"`
+	Blob        string `json:"blob_id,omitempty"`
+	Tree        string `json:"tree_id,omitempty"`
+	Missing     string `json:"missing_component,omitempty"`
+	Lines       *Lines `json:"lines,omitempty"`
+	MissingPath string `json:"missing_path,omitempty"`
+	EntryPath   string `json:"entry_path,omitempty"`
+	EntryMode   string `json:"entry_mode,omitempty"`
+	EntryID     string `json:"entry_id,omitempty"`
 }
 type Receipt struct {
 	Schema   int      `json:"schema_major"`
@@ -65,7 +70,7 @@ func Validate(rev, path string) error {
 	if err := ValidateRevision(rev); err != nil {
 		return err
 	}
-	if !fs.ValidPath(path) || path == "." || strings.Contains(path, "\\") || (len(path) > 1 && path[1] == ':') || len(path) > 4096 || strings.Count(path, "/") >= 128 {
+	if !fs.ValidPath(path) || path == "." || strings.Contains(path, "\\") || hasDrivePrefix(path) || len(path) > 4096 || strings.Count(path, "/") >= 128 {
 		return errors.New("supply a repository-relative file path using slash separators")
 	}
 	for _, r := range path {
@@ -74,6 +79,14 @@ func Validate(rev, path string) error {
 		}
 	}
 	return nil
+}
+
+func hasDrivePrefix(path string) bool {
+	if len(path) < 2 || path[1] != ':' {
+		return false
+	}
+	letter := path[0] | 0x20
+	return letter >= 'a' && letter <= 'z'
 }
 
 func Verify(ctx context.Context, repo, rev, path string, quote []byte, version string) (Receipt, error) {
@@ -125,18 +138,23 @@ func inspectQuote(s *store, r Receipt, quote []byte) (Receipt, error) {
 		r.Reason = "path_absent"
 		r.Evidence.Tree = entry.tree
 		r.Evidence.Missing = entry.component
+		if entry.path != entry.component {
+			r.Evidence.MissingPath = entry.path
+		}
 		return r, nil
 	}
 	if entry.blocked || (entry.mode != "100644" && entry.mode != "100755") {
 		r.Reason = "unsupported_kind"
+		r.Evidence.recordEntry(entry)
 		return r, nil
 	}
 	blob, err := s.readBlob(entry.id)
 	if err != nil {
+		r.Evidence.recordEntry(entry)
 		return unresolved(r, err), nil
 	}
 	r.Evidence.Blob = entry.id
-	if !utf8.Valid(blob) || bytes.IndexByte(blob, 0) >= 0 || bytes.HasPrefix(blob, []byte("version https://git-lfs.github.com/spec/v1")) {
+	if !utf8.Valid(blob) || bytes.IndexByte(blob, 0) >= 0 || lfsPointer(blob) {
 		r.Reason = "unsupported_content"
 		return r, nil
 	}
@@ -155,6 +173,13 @@ func inspectQuote(s *store, r Receipt, quote []byte) (Receipt, error) {
 	r.Verdict = "verified"
 	r.Reason = "quote_found"
 	return r, nil
+}
+
+func (e *Evidence) recordEntry(entry pathEntry) {
+	e.Tree = entry.tree
+	e.EntryPath = entry.path
+	e.EntryMode = entry.mode
+	e.EntryID = entry.id
 }
 
 func unresolved(r Receipt, err error) Receipt {
@@ -247,17 +272,32 @@ func (r Receipt) Text() string {
 		"unsupported_storage":    "This Git storage representation is unsupported.",
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s · exact source quote\n%s", labels[r.Verdict], r.Claim.Path)
+	fmt.Fprintf(&b, "%s · exact source quote\n%s", labels[r.Verdict], strconv.QuoteToGraphic(r.Claim.Path))
 	e := r.Evidence
-	if e.Lines != nil {
+	switch {
+	case e.Lines == nil:
+	case e.Lines.Start == e.Lines.End:
+		fmt.Fprintf(&b, " · line %d", e.Lines.Start)
+	default:
 		fmt.Fprintf(&b, " · lines %d–%d", e.Lines.Start, e.Lines.End)
 	}
-	fmt.Fprintf(&b, "\nRequested commit %s\n", r.Claim.Revision)
+	if e.Commit == "" {
+		fmt.Fprintf(&b, "\nRequested commit %s\n", r.Claim.Revision)
+	} else {
+		fmt.Fprintf(&b, "\nObserved commit %s\n", e.Commit)
+	}
 	if e.Blob != "" {
 		fmt.Fprintln(&b, "Blob", e.Blob)
 	}
-	if e.Tree != "" {
-		fmt.Fprintf(&b, "Tree %s · missing %s\n", e.Tree, e.Missing)
+	if e.EntryID != "" {
+		fmt.Fprintf(&b, "Tree %s · entry %s · mode %s · Object %s\n",
+			e.Tree, strconv.QuoteToGraphic(e.EntryPath), e.EntryMode, e.EntryID)
+	} else if e.Tree != "" {
+		missing := e.MissingPath
+		if missing == "" {
+			missing = e.Missing
+		}
+		fmt.Fprintf(&b, "Tree %s · missing %s\n", e.Tree, strconv.QuoteToGraphic(missing))
 	}
 	fmt.Fprintf(&b, "%s · %s\n", r.Reason, reasons[r.Reason])
 	if r.Detail != "" {

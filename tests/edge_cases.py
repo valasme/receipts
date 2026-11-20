@@ -169,6 +169,82 @@ def suite(repo):
     assert "cumulative tree entries" in receipts[-1]["detail"]
 
 
+def quote_witnesses(repo):
+    git(repo, "init", "-q", "--object-format=sha1")
+    contents = "\ufeffcafé\nsecond\n".encode()
+    text = raw_object(repo, "blob", contents)
+    prose = raw_object(repo, "blob", b"version https://git-lfs.github.com/spec/v1 is a marker\n")
+    prefix = b"version https://git-lfs.github.com/spec/v1"
+    oid = b"sha256:" + b"e" * 64
+    pointer = raw_object(repo, "blob", b"\r\n".join([
+        prefix, b"ext-0-sample " + oid, b"oid " + oid, b"size 3", b""
+    ]))
+    marker = raw_object(repo, "blob", prefix + b"\nordinary text\n")
+    empty_tree = raw_object(repo, "tree", b"")
+    missing = "d" * 40
+    submodule = git(repo, "commit-tree", empty_tree, "-m", "module")
+    empty_dir = f"040000 tree {empty_tree}\trepeat\n"
+    repeated_tree = subprocess.check_output(
+        ["git", "-C", repo, "mktree"], input=empty_dir.encode(), env=env
+    ).strip().decode()
+    entries = [
+        f"100644 blob {text}\t1:note",
+        f"100644 blob {text}\t spaced ",
+        f"100644 blob {prose}\tprose",
+        f"100644 blob {marker}\tmarker",
+        f"100644 blob {pointer}\tpointer",
+        f"120000 blob {text}\tlink",
+        f"100644 blob {missing}\tmissing",
+        f"040000 tree {repeated_tree}\trepeat",
+        f"160000 commit {submodule}\tmodule",
+    ]
+    tree = subprocess.check_output(
+        ["git", "-C", repo, "mktree", "--missing"],
+        input=("\n".join(entries) + "\n").encode(), env=env,
+    ).strip().decode()
+    rev = git(repo, "commit-tree", tree, "-m", "quote witnesses")
+    original = subprocess.check_output(
+        ["git", "-C", repo, "cat-file", "blob", rev + ":1:note"], env=env
+    )
+    assert original == contents
+    assert check(repo, rev, "1:note", "\ufeffcafé".encode())["verdict"] == "verified"
+    assert check(repo, rev, "1:note", "cafe\u0301".encode())["verdict"] == "contradicted"
+    assert check(repo, rev, "1:note", "\ufeffsecond".encode())["verdict"] == "contradicted"
+    check(repo, rev, "a:note", b"x", expected=2)
+    assert check(repo, rev, "prose", b"marker")["verdict"] == "verified"
+    assert check(repo, rev, "marker", b"ordinary text")["verdict"] == "verified"
+    assert check(repo, rev, "pointer", b"version")["reason"] == "unsupported_content"
+    for path, component in [
+        ("link", "link"), ("link/item", "link"), ("repeat", "repeat"),
+        ("missing", "missing"), ("module", "module"),
+    ]:
+        git_mode, _, entry_id = git(repo, "ls-tree", rev, "--", component).split()[:3]
+        mode = git_mode.lstrip("0")
+        receipt = check(repo, rev, path, b"x")
+        assert receipt["verdict"] == "cant_check", receipt
+        evidence = receipt["evidence"]
+        assert (evidence["tree_id"], evidence["entry_path"], evidence["entry_mode"], evidence["entry_id"]) == (
+            tree, component, mode, entry_id,
+        ), receipt
+        assert "blob_id" not in evidence
+        for fmt in ["text", "markdown"]:
+            out = check(repo, rev, path, b"x", fmt)
+            assert f"Observed commit {rev}" in out
+            assert f'Tree {tree} · entry "{component}" · mode {mode} · Object {entry_id}' in out
+    for fmt in ["text", "markdown"]:
+        observed = check(repo, rev, " spaced ", b"second\n", fmt)
+        assert '" spaced " · line 2' in observed
+        assert f"Observed commit {rev}" in observed
+        multiline = check(repo, rev, " spaced ", "café\nsecond\n".encode(), fmt)
+        assert '" spaced " · lines 1–2' in multiline
+        unresolved = check(repo, "0" * 40, " spaced ", b"x", fmt)
+        assert "Requested commit " + "0" * 40 in unresolved
+    for path, expected in [("repeat/repeat/repeat", "repeat/repeat/repeat"), ("repeat/other/repeat", "repeat/other")]:
+        r = check(repo, rev, path, b"x")
+        assert r["reason"] == "path_absent" and r["evidence"]["missing_path"] == expected, r
+        assert f'missing "{expected}"' in check(repo, rev, path, b"x", "text")
+
+
 def storage_selection(root):
     repo = root / "clone"
     repo.mkdir()
@@ -231,4 +307,6 @@ if __name__ == "__main__":
         suite(Path(directory))
     with tempfile.TemporaryDirectory() as directory:
         storage_selection(Path(directory))
-    print("Edge, repository discovery, object formats, privacy and tree limits passed.")
+    with tempfile.TemporaryDirectory() as directory:
+        quote_witnesses(Path(directory))
+    print("Edge, repository discovery, quote evidence, privacy and tree limits passed.")

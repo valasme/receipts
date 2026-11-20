@@ -95,6 +95,11 @@ def compare_paths(binary, repo):
     assert git(repo, "ls-tree", head, "--", "Guide.txt") == ""
     equal = check_changes(binary, repo, base_tip, head, {"guide.txt": "Contradicted", "Guide.txt": "Contradicted"})
     assert equal["Guide.txt"].count(f'Tree {head_tree} · missing "Guide.txt"') == 2
+    assert "The path is absent in both commits." in equal["Guide.txt"]
+    assert "The file has the same blob ID and Git mode in both commits." in equal["guide.txt"]
+    version = subprocess.check_output([binary, "--version"], text=True).strip().removeprefix("receipts ")
+    assert f"Checker version {version}" in preview
+    assert "git-path-blob-and-mode-v1" in preview
 
     renamed = commit(repo, {"new guide.txt": b"New guide\n"}, head)
     assert git(repo, "diff", "-M", "--name-status", head, renamed) == "R100\tguide.txt\tnew guide.txt"

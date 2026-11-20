@@ -10,6 +10,7 @@ import (
 
 type FileChangeReceipt struct {
 	path             string
+	version          string
 	comparison, head fileObservation
 	verdict          fileChangeVerdict
 }
@@ -30,7 +31,7 @@ type fileObservation struct {
 }
 
 func VerifyFileChange(ctx context.Context, repo, comparison, head, path string) (FileChangeReceipt, error) {
-	i := NewInspection(ctx, repo, "dev")
+	i := NewInspection(ctx, repo, "unreported")
 	defer i.Close()
 	return i.VerifyFileChange(comparison, head, path)
 }
@@ -44,6 +45,7 @@ func (i *Inspection) VerifyFileChange(comparison, head, path string) (FileChange
 	}
 	receipt := FileChangeReceipt{
 		path:       path,
+		version:    i.version,
 		comparison: fileObservation{commit: strings.ToLower(comparison)},
 		head:       fileObservation{commit: strings.ToLower(head)},
 	}
@@ -119,7 +121,10 @@ func (r FileChangeReceipt) Text() string {
 	verdict, reason := "Can't check", "The evidence is incomplete or unsupported."
 	switch r.verdict {
 	case changeContradicted:
-		verdict, reason = "Contradicted", "The path is the same in both commits."
+		verdict, reason = "Contradicted", "The file has the same blob ID and Git mode in both commits."
+		if r.head.entry.id == "" {
+			reason = "The path is absent in both commits."
+		}
 	case changeVerified:
 		verdict, reason = "Verified", "The path differs between the two commits."
 	}
@@ -127,7 +132,8 @@ func (r FileChangeReceipt) Text() string {
 	fmt.Fprintf(&out, "%s · file changed\nPath %s\n", verdict, strconv.QuoteToGraphic(r.path))
 	r.comparison.writeEvidence(&out, "Comparison")
 	r.head.writeEvidence(&out, "Head")
-	fmt.Fprintln(&out, "Comparison rule · committed blob ID and Git mode at the exact path")
+	fmt.Fprintln(&out, "Comparison rule git-path-blob-and-mode-v1 · committed blob ID and Git mode at the exact path")
+	fmt.Fprintln(&out, "Checker version", r.version)
 	fmt.Fprintln(&out, reason)
 	return out.String()
 }
@@ -138,12 +144,12 @@ func (side fileObservation) writeEvidence(out *strings.Builder, label string) {
 	switch {
 	case entry.tree == "":
 	case entry.id == "":
-		fmt.Fprintf(out, "  Tree %s · missing %s\n", entry.tree, strconv.QuoteToGraphic(entry.component))
+		fmt.Fprintf(out, "  Tree %s · missing %s\n", entry.tree, strconv.QuoteToGraphic(entry.path))
 	case side.failure == "":
 		fmt.Fprintf(out, "  Tree %s · mode %s · Blob %s\n", entry.tree, entry.mode, entry.id)
 	default:
 		fmt.Fprintf(out, "  Tree %s · entry %s · mode %s · Object %s\n",
-			entry.tree, strconv.QuoteToGraphic(entry.component), entry.mode, entry.id)
+			entry.tree, strconv.QuoteToGraphic(entry.path), entry.mode, entry.id)
 	}
 	if side.failure != "" {
 		fmt.Fprintf(out, "  %s\n", side.failure)
