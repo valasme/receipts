@@ -1,5 +1,33 @@
 # Walk through a receipt
 
+## Actual limited-preview output
+
+This transcript used the Linux amd64 release binary against the tagged Receipts source. In a clone that contains v0.0.1-pre.1, run:
+
+```sh
+revision=b82aa5a3246a82e8fc5ae0f10ed3878f1d8e84fd
+printf %s '# Receipts' | receipts check --rev "$revision" --path README.md --quote-file -
+```
+
+```text
+Verified · exact source quote
+README.md · lines 1–1
+Requested commit b82aa5a3246a82e8fc5ae0f10ed3878f1d8e84fd
+Blob 4e81deb911e82333ca040e9a922c30c9881024d2
+quote_found · First match. CRLF and LF count as the same line ending.
+```
+
+To exercise the other two results:
+
+```sh
+printf %s '# This heading was never in the preview README' | receipts check --rev "$revision" --path README.md --quote-file -
+printf %s '# Receipts' | receipts check --rev 0000000000000000000000000000000000000000 --path README.md --quote-file -
+```
+
+The first returns **Contradicted** and cites the same blob with reason `quote_absent`. The second returns **Can't check** with reason `revision_unavailable`. For an independent check of the first example, run `git rev-parse "$revision:README.md"` to confirm the blob ID and `git show "$revision:README.md"` to inspect its first line.
+
+## Original design examples
+
 These are interface examples for the planned product. Identifiers are illustrative. The example repository has a committed file named src/example.go. The quotation file holds the two lines being asserted, with a newline after the closing brace. The working copy can contain newer text.
 
 ## Before submitting

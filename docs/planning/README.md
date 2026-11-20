@@ -55,4 +55,4 @@ For each milestone, record the tested checker revision, corpus or fixture versio
 
 ## Planning review
 
-The starter's smoke command proves that its CLI launches. It provides no evidence yet for object lookup, receipt correctness, accessibility, performance or GitHub publication. Each claim about future behavior now has an implementation ticket, a parked discovery condition, or an explicit limit. After the first slice, compare the real command and receipt with the examples. After the benchmark, revisit the delivery order using the measured cost of preparing a claim.
+The starter review predates implementation. The [published limited preview](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.1) includes the local quotation checker. The [qualification record](../verification.md) covers correctness, native installs, limits and open pilot and signing gates. The 12 paired human timings are outstanding.

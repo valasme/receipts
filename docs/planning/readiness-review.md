@@ -1,6 +1,6 @@
 # Readiness review of the Receipts starter
 
-**Disposition: hold external pre-alpha publication.** The baseline reviewed was the complete tree at e12fbb9, including the starter at 324b94a and the subsequent planning diff. The comparison source was the product research, product explanation and distribution brief supplied in the conversation. Market statistics, funding prospects and vendor pricing were background claims, outside this product-conformance audit.
+**Historical starter audit.** The publication hold below applied to the starter. The published unsigned preview and its remaining release gates are covered in the [verification record](../verification.md). The baseline reviewed was the complete tree at e12fbb9, including the starter at 324b94a and the subsequent planning diff. The comparison source was the product research, product explanation and distribution brief supplied in the conversation. Market statistics, funding prospects and vendor pricing were background claims, outside this product-conformance audit.
 
 ## Standards and repository findings
 

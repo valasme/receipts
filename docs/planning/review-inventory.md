@@ -431,23 +431,23 @@ Local release · T07
 
 Local release · T07
 
-- [ ] R341 — Publish a mapping from OS and architecture to archive name.
-- [ ] R342 — Distinguish a source checkout install from an archive install.
-- [ ] R343 — Provide a user-local install path on Linux.
-- [ ] R344 — Provide a user-local install path on macOS.
-- [ ] R345 — Provide a user-local install path on Windows.
+- [x] R341 — Publish a mapping from OS and architecture to archive name.
+- [x] R342 — Distinguish a source checkout install from an archive install.
+- [x] R343 — Provide a user-local install path on Linux.
+- [x] R344 — Provide a user-local install path on macOS.
+- [x] R345 — Provide a user-local install path on Windows.
 - [ ] R346 — Document PATH changes separately for common shells.
 - [x] R347 — Show how to verify the installed version.
 - [x] R348 — Include the license text with every archive.
 - [x] R349 — Generate an artifact manifest from the actual release outputs.
-- [ ] R350 — Check each archive against the published checksum.
-- [ ] R351 — Explain what a checksum establishes about corruption.
+- [x] R350 — Check each archive against the published checksum.
+- [x] R351 — Explain what a checksum establishes about corruption.
 - [x] R352 — Provide an independent authenticity verification route or declare its absence.
 - [x] R353 — State signing and notarization status for macOS downloads.
 - [x] R354 — State code-signing status for Windows downloads.
 - [x] R355 — Avoid onboarding instructions that weaken OS protections.
-- [ ] R356 — Exercise installation into a clean temporary environment.
-- [ ] R357 — Exercise removal without deleting a user's repositories.
+- [x] R356 — Exercise installation into a clean temporary environment.
+- [x] R357 — Exercise removal without deleting a user's repositories.
 - [ ] R358 — Exercise upgrading from the oldest supported preview.
 - [x] R359 — Document a reversible way to select a known-good binary.
 - [ ] R360 — Gate each future package-manager channel on a named maintenance budget.
@@ -462,19 +462,19 @@ Local release · T07
 - [x] R364 — Publish known unsupported repository formats.
 - [x] R365 — List which platform combinations were actually exercised.
 - [x] R366 — Run the packaging rehearsal before creating a public tag.
-- [ ] R367 — Verify that the release manifest has one entry per intended target.
+- [x] R367 — Verify that the release manifest has one entry per intended target.
 - [ ] R368 — Test downloaded artifacts from a staged or draft distribution.
-- [ ] R369 — Describe recovery from a failed upload before publication.
+- [x] R369 — Describe recovery from a failed upload before publication.
 - [ ] R370 — Define how to withdraw an artifact with a bad checksum.
-- [ ] R371 — Define how to supersede a release with a bad verdict rule.
+- [x] R371 — Define how to supersede a release with a bad verdict rule.
 - [ ] R372 — Preserve prior provenance records after superseding a release.
 - [ ] R373 — Explain how users recognize affected checker versions in saved receipts.
 - [ ] R374 — Test a downgrade against the last compatible receipt schema.
 - [ ] R375 — Record the restore path when a signing credential is unavailable.
 - [ ] R376 — Keep dependency inventory per released version.
 - [ ] R377 — Assign license-review responsibility to the project owner.
-- [ ] R378 — Record changes in toolchain and build inputs.
-- [ ] R379 — Rehearse the release sequence without a second approver.
+- [x] R378 — Record changes in toolchain and build inputs.
+- [x] R379 — Rehearse the release sequence without a second approver.
 - [ ] R380 — Choose the release communication channel before the first incident.
 
 ## Documentation, support and governance
@@ -482,14 +482,14 @@ Local release · T07
 Local release · T07
 
 - [x] R381 — Give a newcomer one copyable successful local example.
-- [ ] R382 — Give a newcomer one deliberately contradicted example.
-- [ ] R383 — Give a newcomer one example requiring additional evidence.
+- [x] R382 — Give a newcomer one deliberately contradicted example.
+- [x] R383 — Give a newcomer one example requiring additional evidence.
 - [x] R384 — Show how to obtain a full commit ID using familiar Git commands.
 - [ ] R385 — Explain why quotes copied from rendered web pages can differ.
 - [x] R386 — Explain how to include or omit a final newline deliberately.
 - [ ] R387 — Provide an annotated receipt with every evidence field identified.
 - [ ] R388 — Publish the policy for interpreting unknown result codes.
-- [ ] R389 — Describe independent manual verification using a pinned revision.
+- [x] R389 — Describe independent manual verification using a pinned revision.
 - [x] R390 — Document the boundary between reporting a bug and disclosing private material.
 - [ ] R391 — Give issue reporters a redacted minimal reproduction template.
 - [ ] R392 — Show how to reduce a case to a synthetic repository.

@@ -2,6 +2,14 @@
 
 Application source: tag v0.0.1-pre.1, commit b82aa5a3246a82e8fc5ae0f10ed3878f1d8e84fd. Test tools and workflow recipes can advance separately. The build record shipped with the release identifies both revisions and the compiler. [Source checks](https://github.com/valasme/receipts/actions/runs/44786114150) · [Patched release qualification](https://github.com/valasme/receipts/actions/runs/44786692521)
 
+## Published release
+
+GitHub published the immutable, unsigned prerelease at 17:52 UTC on November 20, 2026. Its 13 assets contain six native archives, four Linux packages, the local installer manifests, a build record and a checksum manifest. The public checksum manifest has SHA-256 `010d115251a09ff6575a3aebed68472d26d4a464ebac065cd466de61c19f5e96`. All 12 entries matched after download. GitHub provenance verifies against the release workflow at `e93e9b991f44c4643ac984f40e9096d7c550d7b3`. Apple Developer ID signing, notarization and Windows Authenticode remain open. [Download v0.0.1-pre.1](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.1) · [Installation and verification](release.md)
+
+The prepublication qualification ran the archived executable, CLI contract, storage tests, golden receipt and 60-case corpus on Linux, macOS and Windows, each on amd64 and arm64. A separate consumer run downloaded the public assets, verified the two attestations and repeated the archive tests on all six runners. Linux deb/rpm installations and removals passed on both architectures. Homebrew install, formula test and uninstall passed on both Macs. These used the preview's local formula and packages. [Release qualification](https://github.com/valasme/receipts/actions/runs/44786692521) · [Public install results on Linux and macOS](https://github.com/valasme/receipts/actions/runs/44787463622)
+
+Both Windows consumers installed the public archive through WinGet and Scoop, invoked the installed executable and removed it. WinGet removal used the installed display name, `Receipts Preview`. The Windows ARM64 runner required WinGet provisioning. Scoop used an isolated user directory on each runner. The tagged Go module gives an additional install path outside the checkout. [Public Windows installer results](https://github.com/valasme/receipts/actions/runs/44788408945)
+
 ## Decisions made during qualification
 
 | Question | Competing considerations | Decision and evidence |

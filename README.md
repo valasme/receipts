@@ -4,6 +4,15 @@ Check whether an exact quotation appears in a source file at a particular Git co
 
 ## Install and run
 
+The [v0.0.1-pre.1 limited preview](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.1) provides native downloads for macOS, Linux and Windows on amd64 and arm64. The downloads have GitHub build attestations. Apple signing and notarization and Windows Authenticode are pending. [Verification and install instructions](https://github.com/valasme/receipts/blob/main/docs/release.md)
+
+With a patched Go toolchain, install this exact preview and check the installed version:
+
+```sh
+go install github.com/valasme/receipts/cmd/receipts@v0.0.1-pre.1
+receipts --version
+```
+
 From a checkout with Go 1.25 or newer, run `go install ./cmd/receipts`. Put your Go binary directory on PATH. For an archive, verify its checksum against the release manifest, extract it and run the included executable directly. On Windows use `.\receipts.exe --help`. On Linux or macOS use `./receipts --help`. To remove an archive installation, delete the extracted files. To switch versions, keep each extraction in its own directory and select the desired binary.
 
 From the root of the Receipts repository, this POSIX example checks the README heading:
