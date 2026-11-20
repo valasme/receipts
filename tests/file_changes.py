@@ -83,6 +83,11 @@ def compare_paths(binary, repo):
     assert git(repo, "ls-tree", head, "--", "Guide.txt") == ""
     equal = check_changes(binary, repo, base_tip, head, {"guide.txt": "Contradicted", "Guide.txt": "Contradicted"})
     assert equal["Guide.txt"].count(f'Tree {head_tree} · missing "Guide.txt"') == 2
+    assert "The path is absent in both commits." in equal["Guide.txt"]
+    assert "The file has the same blob ID and Git mode in both commits." in equal["guide.txt"]
+    version = subprocess.check_output([binary, "--version"], timeout=25, text=True).strip().removeprefix("receipts ")
+    assert f"Checker version {version}" in preview
+    assert "git-path-blob-and-mode-v1" in preview
 
     renamed = commit(repo, {"new guide.txt": b"New guide\n"}, head)
     assert git(repo, "diff", "-M", "--name-status", head, renamed) == "R100\tguide.txt\tnew guide.txt"
@@ -123,6 +128,21 @@ def compare_modes_and_kinds(binary, repo):
         assert "unsupported_kind" in receipts[path]
     child_blob = git(repo, "rev-parse", f"{head}:dir/item.txt")
     assert f"Tree {child} · mode 100644 · Blob {child_blob}" in receipts["dir/item.txt"]
+
+
+def reuse_comparison_blobs(binary, repo):
+    # Three distinct 7 MiB blobs fit the shared 32 MiB budget only if
+    # comparing the same blob at both commits reuses its verification.
+    paths = ["large-a", "large-b", "large-c"]
+    comparison = commit(repo, {path: path.encode() + b"x" * (7 << 20) for path in paths})
+    head = commit(repo, {}, comparison, extra=tuple(
+        f"100755 blob {git(repo, 'rev-parse', comparison + ':' + path)}\t{path}\n"
+        for path in paths
+    ))
+    observed = check_changes(binary, repo, comparison, head, dict.fromkeys(paths, "Verified"))
+    for result in observed.values():
+        assert "mode 100644 · Blob " in result and "mode 100755 · Blob " in result
+
 
 
 def unavailable_objects(binary, repo, comparison, head):
@@ -271,6 +291,7 @@ def run(binary, repo):
     git(repo, "init", "-q", "--template=", "--object-format=sha1")
     comparison, head = compare_paths(binary, repo)
     compare_modes_and_kinds(binary, repo)
+    reuse_comparison_blobs(binary, repo)
     validate_proposals(binary, repo, comparison, head)
     literal_proposals(binary, repo, comparison, head)
     unavailable_objects(binary, repo, comparison, head)

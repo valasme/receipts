@@ -47,7 +47,7 @@ def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
         assert not p.stdout and p.stderr
         return
     assert not p.stderr
-    if fmt != "json":
+    if fmt not in {"json", "json-evidence"}:
         return p.stdout.decode()
     receipt = json.loads(p.stdout)
     if validator:

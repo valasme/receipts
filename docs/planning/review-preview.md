@@ -36,6 +36,8 @@ Test at the public CLI process boundary with a committed Git fixture and the cap
 
 Add a `file_changes` array to a review proposal and supply `--compare COMMIT` when the array contains entries. The `--rev` commit is the head. Each entry has a `path`, `statement` and inclusive `source_lines`. The statement must match those submission lines after CRLF normalization and contain exactly one pair of backticks enclosing the literal path. The same entry limit and span rules apply across all three arrays. The maintainer confirms whether the statement makes the positive claim that this path changed.
 
+The text receipt includes the checker version and comparison rule `git-path-blob-and-mode-v1`. It reports a change in presence, Git mode, or verified blob ID at the exact path. A verified tree can establish absence. The same blob ID and mode at both commits, or proven absence at both, contradicts the claim.
+
 Compare the blob ID and mode at each exact path. Blob IDs reflect committed bytes, including line endings and symlink targets. If a verified tree proves a component is missing, show that tree and component. Show mode and blob ID for a verified file, or the reason evidence is incomplete or unsupported. A path absent in both trees yields Contradicted. Label the exact Git claim alongside its verdict and show the submission statement separately as context. The [walkthrough](../../examples/agent/README.md#check-whether-a-file-changed) includes a runnable fixture.
 
 ## PR change claim sample

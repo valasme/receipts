@@ -111,6 +111,15 @@ def batch_claims(repo, rev):
         )
         assert results[index] == {"receipt": json.loads(replay)}
         assert results[index]["receipt"]["verdict"] == verdict
+    git(repo, "tag", "-am", "batch annotation", "batch-tag", rev)
+    for kind in [f"{rev}:sample.txt", f"{rev}^{{tree}}", "batch-tag^{tag}"]:
+        noncommit = git(repo, "rev-parse", kind)
+        for claims in [[good], [None]]:
+            invoke(
+                repo, "--batch-file", "-",
+                data=json.dumps(dict(batch, rev=noncommit, claims=claims)).encode(),
+                exit_code=2,
+            )
     unavailable = dict(batch, rev="0" * 40, claims=[good])
     missing = invoke(repo, "--batch-file", "-", data=json.dumps(unavailable).encode())
     assert json.loads(missing)["results"][0]["receipt"]["reason"] == "revision_unavailable"

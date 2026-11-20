@@ -47,8 +47,9 @@ Options:
   --quote-file FILE  Literal UTF-8 quotation, including any final LF.
   --claim-file FILE  One saved claim in schema-major-1 JSON.
   --batch-file FILE  Up to 16 claims at one commit, returned in order.
-  --repo DIR         Local repository (default: current directory).
-  --format FORMAT    text (default), json, or markdown. Batches use json.
+  --repo DIR         Clone root or bare repo (default: search upward from here).
+  --format FORMAT    text (default), markdown, json, or json-evidence.
+                     Batches default to json and also accept json-evidence.
 
 Use regular files or - for stdin. CRLF and LF compare equally.
 Options accept --name VALUE or --name=VALUE. A single dash also works.
@@ -74,7 +75,7 @@ Options:
   --proposal FILE    JSON proposal with source line ranges.
   --rev COMMIT       Full SHA-1 commit ID (40 hexadecimal digits).
   --compare COMMIT   Full comparison commit ID for file-change claims.
-  --repo DIR         Local repository (default: current directory).
+  --repo DIR         Clone root or bare repo (default: search upward from here).
 
 Use regular files or - for one stdin input. Each file may be up to 1 MiB.
 Options accept --name VALUE or --name=VALUE. A single dash also works.
@@ -198,28 +199,28 @@ func executeCheck(ctx context.Context, args []string, stdin io.Reader, stdout, s
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var repo, rev, path, file, claimFile, batchFile, format string
-	provided, parse := registerOptions(flags, stringOption{"repo", &repo, "."}, stringOption{"rev", &rev, ""},
+	provided, parse := registerOptions(flags, stringOption{"repo", &repo, ""}, stringOption{"rev", &rev, ""},
 		stringOption{"path", &path, ""}, stringOption{"quote-file", &file, ""}, stringOption{"claim-file", &claimFile, ""},
 		stringOption{"batch-file", &batchFile, ""}, stringOption{"format", &format, "text"})
 	if err := parse(args); err != nil {
 		fmt.Fprintln(stderr, "Invalid check arguments:", err)
 		return 2
 	}
-	if repo == "" {
+	if provided["repo"] && repo == "" {
 		fmt.Fprintln(stderr, "Invalid check arguments. Supply a directory for --repo, or omit it.")
 		return 2
 	}
-	if format != "text" && format != "json" && format != "markdown" {
-		fmt.Fprintln(stderr, "Invalid check arguments. Use --format text, json, or markdown.")
+	if format != "text" && format != "json" && format != "markdown" && format != "json-evidence" {
+		fmt.Fprintln(stderr, "Invalid check arguments. Use --format text, markdown, json, or json-evidence.")
 		return 2
 	}
 	legacyFlags := provided["rev"] || provided["path"] || provided["quote-file"]
 	if provided["batch-file"] {
-		if batchFile == "" || provided["claim-file"] || legacyFlags || (provided["format"] && format != "json") {
-			fmt.Fprintln(stderr, "Supply --batch-file on its own with optional --repo and --format json.")
+		if batchFile == "" || provided["claim-file"] || legacyFlags || (provided["format"] && format != "json" && format != "json-evidence") {
+			fmt.Fprintln(stderr, "Supply --batch-file with optional --repo and --format json or json-evidence.")
 			return 2
 		}
-		return executeBatch(ctx, stdin, stdout, stderr, repo, batchFile)
+		return executeBatch(ctx, stdin, stdout, stderr, repo, batchFile, format == "json-evidence")
 	}
 	var quote []byte
 	var err error
@@ -267,7 +268,10 @@ func executeCheck(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	if format == "json" {
+	switch format {
+	case "json":
+		return deliverJSON(ctx, stdout, stderr, baseQuotationJSON(receipt))
+	case "json-evidence":
 		return deliverJSON(ctx, stdout, stderr, receipt)
 	}
 	output := receipt.Text()
@@ -276,6 +280,20 @@ func executeCheck(ctx context.Context, args []string, stdin io.Reader, stdout, s
 	}
 	return deliver(ctx, stdout, stderr, output, "Check interrupted.")
 }
+
+// The default JSON format keeps the original witness layout. This also
+// keeps the two receipt formats aligned with the same verdict assignment.
+func baseQuotationJSON(receipt check.Receipt) check.Receipt {
+	e := receipt.Evidence
+	receipt.Evidence = check.Evidence{Format: e.Format, Commit: e.Commit, Blob: e.Blob, Lines: e.Lines}
+	if e.Missing != "" {
+		receipt.Evidence.Tree = e.Tree
+		receipt.Evidence.Missing = e.Missing
+	}
+	receipt.Detail = ""
+	return receipt
+}
+
 func deliverJSON(ctx context.Context, stdout, stderr io.Writer, value any) int {
 	data, err := json.Marshal(value)
 	if err != nil {

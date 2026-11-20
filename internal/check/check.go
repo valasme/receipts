@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -26,12 +27,16 @@ type Lines struct {
 	End   int `json:"end"`
 }
 type Evidence struct {
-	Format  string `json:"object_format,omitempty"`
-	Commit  string `json:"observed_commit,omitempty"`
-	Blob    string `json:"blob_id,omitempty"`
-	Tree    string `json:"tree_id,omitempty"`
-	Missing string `json:"missing_component,omitempty"`
-	Lines   *Lines `json:"lines,omitempty"`
+	Format      string `json:"object_format,omitempty"`
+	Commit      string `json:"observed_commit,omitempty"`
+	Blob        string `json:"blob_id,omitempty"`
+	Tree        string `json:"tree_id,omitempty"`
+	Missing     string `json:"missing_component,omitempty"`
+	Lines       *Lines `json:"lines,omitempty"`
+	MissingPath string `json:"missing_path,omitempty"`
+	EntryPath   string `json:"entry_path,omitempty"`
+	EntryMode   string `json:"entry_mode,omitempty"`
+	EntryID     string `json:"entry_id,omitempty"`
 }
 type Receipt struct {
 	Schema   int      `json:"schema_major"`
@@ -41,6 +46,7 @@ type Receipt struct {
 	Verdict  string   `json:"verdict"`
 	Reason   string   `json:"reason"`
 	Evidence Evidence `json:"evidence"`
+	Detail   string   `json:"detail,omitempty"`
 }
 
 func normalize(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
@@ -48,14 +54,14 @@ func normalize(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []b
 const resolveCommitHint = " Run git rev-parse --verify 'TAG^{commit}' with your tag or branch, then supply the resulting commit ID."
 
 func ValidateRevision(rev string) error {
-	if len(rev) == 64 {
-		return errors.New("SHA-256 repositories are unsupported; supply a SHA-1 commit ID")
-	}
-	if len(rev) != 40 {
+	if len(rev) != 40 && len(rev) != 64 {
 		return errors.New("supply a full 40-digit commit ID." + resolveCommitHint)
 	}
 	if _, err := hex.DecodeString(rev); err != nil {
 		return errors.New("commit ID must be hexadecimal")
+	}
+	if len(rev) == 64 {
+		return errors.New("a 64-digit commit ID has SHA-256 length; supply a full 40-digit SHA-1 commit ID")
 	}
 	return nil
 }
@@ -64,7 +70,7 @@ func Validate(rev, path string) error {
 	if err := ValidateRevision(rev); err != nil {
 		return err
 	}
-	if !fs.ValidPath(path) || path == "." || strings.Contains(path, "\\") || (len(path) > 1 && path[1] == ':') || len(path) > 4096 || strings.Count(path, "/") >= 128 {
+	if !fs.ValidPath(path) || path == "." || strings.Contains(path, "\\") || hasDrivePrefix(path) || len(path) > 4096 || strings.Count(path, "/") >= 128 {
 		return errors.New("supply a repository-relative file path using slash separators")
 	}
 	for _, r := range path {
@@ -75,7 +81,21 @@ func Validate(rev, path string) error {
 	return nil
 }
 
+func hasDrivePrefix(path string) bool {
+	if len(path) < 2 || path[1] != ':' {
+		return false
+	}
+	letter := path[0] | 0x20
+	return letter >= 'a' && letter <= 'z'
+}
+
 func Verify(ctx context.Context, repo, rev, path string, quote []byte, version string) (Receipt, error) {
+	i := NewInspection(ctx, repo, version)
+	defer i.Close()
+	return i.Verify(rev, path, quote)
+}
+
+func (i *Inspection) Verify(rev, path string, quote []byte) (Receipt, error) {
 	if err := Validate(rev, path); err != nil {
 		return Receipt{}, err
 	}
@@ -85,43 +105,24 @@ func Verify(ctx context.Context, repo, rev, path string, quote []byte, version s
 	}
 	rev = strings.ToLower(rev)
 	digest := sha256.Sum256(quote)
-	r := Receipt{Schema: 1, Version: version, Rule: "utf8-crlf-to-lf-v1", Claim: Claim{"exact_source_quote", rev, path, hex.EncodeToString(digest[:])}, Verdict: "cant_check", Reason: "revision_unavailable"}
-	if ctx.Err() != nil {
-		return unresolved(r, errLimit), nil
-	}
-	// A blocking filesystem read can outlive a cooperative deadline.
-	// Return the inconclusive receipt on time.
-	type result struct {
-		receipt Receipt
-		err     error
-	}
-	done := make(chan result, 1)
-	go func() { checked, err := inspect(ctx, repo, r, quote); done <- result{checked, err} }()
-	select {
-	case completed := <-done:
-		if ctx.Err() != nil {
-			return unresolved(r, errLimit), nil
+	r := Receipt{Schema: 1, Version: i.version, Rule: "utf8-crlf-to-lf-v1", Claim: Claim{"exact_source_quote", rev, path, hex.EncodeToString(digest[:])}, Verdict: "cant_check", Reason: "revision_unavailable"}
+	return observe(i, unresolved(r, timeLimit), func(s *store, err error) (Receipt, error) {
+		if err != nil {
+			r.Reason = "repository_unavailable"
+			return unresolved(r, err), nil
 		}
-		return completed.receipt, completed.err
-	case <-ctx.Done():
-		return unresolved(r, errLimit), nil
-	}
+		return inspectQuote(s, r, quote)
+	})
 }
 
-func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt, error) {
+func inspectQuote(s *store, r Receipt, quote []byte) (Receipt, error) {
 	rev, path := r.Claim.Revision, r.Claim.Path
-	s, err := openStore(ctx, repo)
-	if err != nil {
-		r.Reason = "repository_unavailable"
-		return unresolved(r, err), nil
-	}
-	defer s.root.Close()
 	treeID, err := s.commitTree(rev)
 	if err != nil {
 		if errors.Is(err, errNotCommit) {
 			return Receipt{}, err
 		}
-		if errors.Is(err, errCommitTree) {
+		if errors.Is(err, errCommitStructure) {
 			r.Reason = "object_unavailable"
 		}
 		return unresolved(r, err), nil
@@ -130,6 +131,9 @@ func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt
 	r.Reason = "object_unavailable"
 	entry, err := s.findPath(treeID, path)
 	if err != nil {
+		if entry.id != "" {
+			r.Evidence.recordEntry(entry)
+		}
 		return unresolved(r, err), nil
 	}
 	if entry.id == "" {
@@ -137,25 +141,30 @@ func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt
 		r.Reason = "path_absent"
 		r.Evidence.Tree = entry.tree
 		r.Evidence.Missing = entry.component
+		if entry.path != entry.component {
+			r.Evidence.MissingPath = entry.path
+		}
 		return r, nil
 	}
 	if entry.blocked || (entry.mode != "100644" && entry.mode != "100755") {
 		r.Reason = "unsupported_kind"
+		r.Evidence.recordEntry(entry)
 		return r, nil
 	}
 	blob, err := s.readBlob(entry.id)
 	if err != nil {
+		r.Evidence.recordEntry(entry)
 		return unresolved(r, err), nil
 	}
 	r.Evidence.Blob = entry.id
-	if !utf8.Valid(blob) || bytes.IndexByte(blob, 0) >= 0 || bytes.HasPrefix(blob, []byte("version https://git-lfs.github.com/spec/v1")) {
+	if !utf8.Valid(blob) || bytes.IndexByte(blob, 0) >= 0 || lfsPointer(blob) {
 		r.Reason = "unsupported_content"
 		return r, nil
 	}
 	source := normalize(blob)
 	at := bytes.Index(source, quote)
-	if ctx.Err() != nil {
-		return unresolved(r, errLimit), nil
+	if s.ctx.Err() != nil {
+		return unresolved(r, timeLimit), nil
 	}
 	if at < 0 {
 		r.Verdict = "contradicted"
@@ -169,8 +178,16 @@ func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt
 	return r, nil
 }
 
+func (e *Evidence) recordEntry(entry pathEntry) {
+	e.Tree = entry.tree
+	e.EntryPath = entry.path
+	e.EntryMode = entry.mode
+	e.EntryID = entry.id
+}
+
 func unresolved(r Receipt, err error) Receipt {
 	r.Reason = objectFailure(err, r.Reason)
+	r.Detail = failureDetail(err)
 	return r
 }
 
@@ -185,14 +202,33 @@ func objectFailure(err error, fallback string) string {
 	}
 }
 
+func failureDetail(err error) string {
+	var limit limitError
+	if errors.As(err, &limit) {
+		return string(limit)
+	}
+	switch {
+	case err != errStorage && errors.Is(err, errStorage):
+		return strings.TrimPrefix(err.Error(), errStorage.Error()+": ")
+	case err != errRepository && errors.Is(err, errRepository):
+		return strings.TrimPrefix(err.Error(), errRepository.Error()+": ")
+	default:
+		return ""
+	}
+}
+
 // Inspect the complete tree before trusting either a positive or negative lookup.
-func lookup(data []byte, wanted string) (string, string, error) {
+func lookup(data []byte, wanted string, remaining *int) (string, string, error) {
 	var mode, id, previous string
 	seen := make(map[string]bool)
 	for len(data) > 0 {
-		if len(seen) >= 32768 {
-			return "", "", errLimit
+		if len(seen) >= maxTreeEntries {
+			return "", "", treeSizeLimit
 		}
+		if *remaining == 0 {
+			return "", "", treeWorkLimit
+		}
+		(*remaining)--
 		field, tail, ok := bytes.Cut(data, []byte{0})
 		if !ok || len(tail) < 20 {
 			return "", "", errObject
@@ -239,18 +275,36 @@ func (r Receipt) Text() string {
 		"unsupported_storage":    "This Git storage representation is unsupported.",
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s · exact source quote\n%s", labels[r.Verdict], r.Claim.Path)
+	fmt.Fprintf(&b, "%s · exact source quote\n%s", labels[r.Verdict], strconv.QuoteToGraphic(r.Claim.Path))
 	e := r.Evidence
-	if e.Lines != nil {
+	switch {
+	case e.Lines == nil:
+	case e.Lines.Start == e.Lines.End:
+		fmt.Fprintf(&b, " · line %d", e.Lines.Start)
+	default:
 		fmt.Fprintf(&b, " · lines %d–%d", e.Lines.Start, e.Lines.End)
 	}
-	fmt.Fprintf(&b, "\nRequested commit %s\n", r.Claim.Revision)
+	if e.Commit == "" {
+		fmt.Fprintf(&b, "\nRequested commit %s\n", r.Claim.Revision)
+	} else {
+		fmt.Fprintf(&b, "\nObserved commit %s\n", e.Commit)
+	}
 	if e.Blob != "" {
 		fmt.Fprintln(&b, "Blob", e.Blob)
 	}
-	if e.Tree != "" {
-		fmt.Fprintf(&b, "Tree %s · missing %s\n", e.Tree, e.Missing)
+	if e.EntryID != "" {
+		fmt.Fprintf(&b, "Tree %s · entry %s · mode %s · Object %s\n",
+			e.Tree, strconv.QuoteToGraphic(e.EntryPath), e.EntryMode, e.EntryID)
+	} else if e.Tree != "" {
+		missing := e.MissingPath
+		if missing == "" {
+			missing = e.Missing
+		}
+		fmt.Fprintf(&b, "Tree %s · missing %s\n", e.Tree, strconv.QuoteToGraphic(missing))
 	}
 	fmt.Fprintf(&b, "%s · %s\n", r.Reason, reasons[r.Reason])
+	if r.Detail != "" {
+		fmt.Fprintln(&b, r.Detail)
+	}
 	return b.String()
 }

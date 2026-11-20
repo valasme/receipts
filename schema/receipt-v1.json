@@ -61,6 +61,27 @@
           "type": "string",
           "minLength": 1
         },
+        "missing_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry_mode": {
+          "enum": [
+            "40000",
+            "100644",
+            "100755",
+            "120000",
+            "160000"
+          ]
+        },
+        "entry_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
         "lines": {
           "type": "object",
           "properties": {
@@ -94,8 +115,26 @@
         ],
         "lines": [
           "blob_id"
+        ],
+        "missing_path": [
+          "missing_component"
+        ],
+        "entry_path": [
+          "entry_id"
+        ],
+        "entry_mode": [
+          "entry_id"
+        ],
+        "entry_id": [
+          "entry_path",
+          "entry_mode",
+          "tree_id"
         ]
       }
+    },
+    "detail": {
+      "type": "string",
+      "minLength": 1
     },
     "verdict": {
       "enum": [
@@ -147,6 +186,11 @@
                 "required": [
                   "missing_component"
                 ]
+              },
+              {
+                "required": [
+                  "entry_id"
+                ]
               }
             ]
           }
@@ -185,6 +229,11 @@
                 "required": [
                   "lines"
                 ]
+              },
+              {
+                "required": [
+                  "entry_id"
+                ]
               }
             ]
           }
@@ -218,6 +267,11 @@
               {
                 "required": [
                   "lines"
+                ]
+              },
+              {
+                "required": [
+                  "entry_id"
                 ]
               }
             ]

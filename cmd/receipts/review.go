@@ -33,14 +33,14 @@ func executeReview(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	flags := flag.NewFlagSet("review", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var repo, rev, comparison, submissionFile, proposalFile string
-	provided, parse := registerOptions(flags, stringOption{"repo", &repo, "."}, stringOption{"rev", &rev, ""},
+	provided, parse := registerOptions(flags, stringOption{"repo", &repo, ""}, stringOption{"rev", &rev, ""},
 		stringOption{"compare", &comparison, ""},
 		stringOption{"submission", &submissionFile, ""}, stringOption{"proposal", &proposalFile, ""})
 	if err := parse(args); err != nil {
 		fmt.Fprintln(stderr, "Invalid review arguments:", err)
 		return 2
 	}
-	if repo == "" || submissionFile == "" || proposalFile == "" || (submissionFile == "-" && proposalFile == "-") {
+	if (provided["repo"] && repo == "") || submissionFile == "" || proposalFile == "" || (submissionFile == "-" && proposalFile == "-") {
 		fmt.Fprintln(stderr, "Supply --submission, --proposal, and --rev. At most one input may use stdin. Run receipts review --help.")
 		return 2
 	}
@@ -100,7 +100,8 @@ func review(ctx context.Context, stdin io.Reader, repo, rev, comparison, submiss
 	if len(entries) == 0 {
 		fmt.Fprintln(&out, "No claims or unresolved statements were proposed.")
 	}
-	version := buildVersion()
+	inspection := check.NewInspection(clock, repo, buildVersion())
+	defer inspection.Close()
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -113,7 +114,7 @@ func review(ctx context.Context, stdin io.Reader, repo, rev, comparison, submiss
 		}
 		switch {
 		case entry.fileChangePath != "":
-			receipt, err := check.VerifyFileChange(clock, repo, comparison, rev, entry.fileChangePath)
+			receipt, err := inspection.VerifyFileChange(comparison, rev, entry.fileChangePath)
 			if err != nil {
 				return "", fmt.Errorf("proposal file-change claim at submission line %d: %w", entry.start, err)
 			}
@@ -121,7 +122,7 @@ func review(ctx context.Context, stdin io.Reader, repo, rev, comparison, submiss
 			fmt.Fprintln(&out, "Claim checked · The file at this exact path changed between the two commits.")
 			writeReviewContext(&out, "Submission statement", entry.statement)
 		case entry.quote != nil:
-			receipt, err := check.Verify(clock, repo, rev, entry.quote.path, []byte(entry.quote.text), version)
+			receipt, err := inspection.Verify(rev, entry.quote.path, []byte(entry.quote.text))
 			if err != nil {
 				return "", fmt.Errorf("proposal claim at submission line %d: %w", entry.start, err)
 			}

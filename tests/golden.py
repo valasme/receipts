@@ -56,27 +56,44 @@ def golden():
                 "lines": {"start": 2, "end": 2},
             },
         }
-        actual = subprocess.check_output(
-            [
-                binary,
-                "check",
-                "--repo",
-                directory,
-                "--rev",
-                REV,
-                "--path",
-                "sample.txt",
-                "--quote-file",
-                "-",
-                "--format",
-                "json",
-            ],
-            input=b"line two",
-            timeout=20,
-        )
-        assert actual == json.dumps(expected, separators=(",", ":")).encode() + b"\n", (
-            actual
-        )
+        def invoke(path, quote, fmt="json"):
+            return subprocess.check_output(
+                [binary, "check", "--repo", directory, "--rev", REV, "--path", path,
+                 "--quote-file", "-", "--format", fmt],
+                input=quote, timeout=20,
+            )
+
+        assert invoke("sample.txt", b"line two") == json.dumps(expected, separators=(",", ":")).encode() + b"\n"
+
+        # The inconclusive receipt originally retained the observed commit
+        # but omitted the known tree entry. Its default bytes remain stable.
+        scope = {"object_format": "sha1", "observed_commit": REV}
+        blocked_path = "sample.txt/nested"
+        blocked = {
+            **expected,
+            "claim": {**expected["claim"], "path": blocked_path},
+            "verdict": "cant_check",
+            "reason": "unsupported_kind",
+            "evidence": scope,
+        }
+        assert invoke(blocked_path, b"line two") == json.dumps(blocked, separators=(",", ":")).encode() + b"\n"
+        detail = json.loads(invoke(blocked_path, b"line two", "json-evidence"))
+        tree = git(repo, "rev-parse", f"{REV}^{{tree}}")
+        assert detail["evidence"] == {
+            **scope, "tree_id": tree, "entry_path": "sample.txt",
+            "entry_mode": "100644", "entry_id": BLOB,
+        }
+
+        data = json.dumps({"schema_major": 1, "rev": REV, "claims": [
+            {"path": blocked_path, "quote": "line two"},
+        ]}).encode()
+        for fmt, receipt in (("json", blocked), ("json-evidence", detail)):
+            output = subprocess.check_output(
+                [binary, "check", "--repo", directory, "--batch-file", "-", "--format", fmt],
+                input=data, timeout=20,
+            )
+            result = {"schema_major": 1, "results": [{"receipt": receipt}]}
+            assert output == json.dumps(result, separators=(",", ":")).encode() + b"\n"
     print("Matched frozen commit and exact receipt bytes.")
 
 

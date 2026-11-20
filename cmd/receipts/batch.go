@@ -22,7 +22,7 @@ type batchResult struct {
 	Error   string         `json:"error,omitempty"`
 }
 
-func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, repo, file string) int {
+func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, repo, file string, detailed bool) int {
 	data, err := readInput(ctx, stdin, file, maxBatchFile, "batch")
 	if ctx.Err() != nil {
 		fmt.Fprintln(stderr, "Check interrupted.")
@@ -40,7 +40,12 @@ func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 
 	clock, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
-	version := buildVersion()
+	inspection := check.NewInspection(clock, repo, buildVersion())
+	defer inspection.Close()
+	if err := inspection.ValidateSharedRevision(rev); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
 	results := make([]batchResult, 0, len(claims))
 	for _, item := range claims {
 		if ctx.Err() != nil {
@@ -56,10 +61,13 @@ func executeBatch(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 			results = append(results, batchResult{Error: err.Error()})
 			continue
 		}
-		receipt, err := check.Verify(clock, repo, rev, quote.path, []byte(quote.text), version)
+		receipt, err := inspection.Verify(rev, quote.path, []byte(quote.text))
 		if err != nil {
 			results = append(results, batchResult{Error: err.Error()})
 			continue
+		}
+		if !detailed {
+			receipt = baseQuotationJSON(receipt)
 		}
 		results = append(results, batchResult{Receipt: &receipt})
 	}
