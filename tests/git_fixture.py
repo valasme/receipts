@@ -27,4 +27,3 @@ def git_bytes(repo, *args, data=None):
 
 def git(repo, *args):
     return git_bytes(repo, *args).strip().decode()
-

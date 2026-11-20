@@ -14,6 +14,7 @@ binary = Path(sys.argv[1]).resolve()
 
 validator = None
 if os.getenv("RECEIPTS_VALIDATE_SCHEMA") == "1":
+    from jsonschema import ValidationError
     from receipt_contract import validate_quote, validator as load_validator
 
     validator = load_validator("receipt-v1.json")
@@ -49,7 +50,10 @@ def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
         return p.stdout.decode()
     receipt = json.loads(p.stdout)
     if validator:
-        validate_quote(receipt, validator)
+        try:
+            validate_quote(receipt, validator)
+        except ValidationError as error:
+            raise AssertionError(f"receipt contract: {error.message}") from error
     return receipt
 
 
