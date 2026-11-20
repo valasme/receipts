@@ -31,6 +31,7 @@ jobs:
       - run: go test -count=1 ./...
       - run: go build -o receipts-test.exe ./cmd/receipts
       - run: python tests/acceptance.py ./receipts-test.exe
+      - run: python tests/claim_files.py ./receipts-test.exe
       - run: python tests/storage.py ./receipts-test.exe
       - run: python tests/golden.py ./receipts-test.exe
       - run: python tests/edge_cases.py ./receipts-test.exe

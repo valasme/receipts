@@ -20,11 +20,12 @@ import (
 var version = "dev"
 
 const help = `Usage: receipts check --rev COMMIT --path PATH --quote-file FILE [--repo DIR] [--format FORMAT]
+       receipts check --claim-file FILE [--repo DIR] [--format FORMAT]
        receipts --help | --version | --licenses
 
 Check an exact source quotation in a committed file. Use a full SHA-1
 commit ID and a repository-relative path. The repository defaults to ".".
-Pass - as the quote file to read stdin. Formats: text, json, markdown.
+Pass - as the quote or claim file to read stdin. Formats: text, json, markdown.
 A final newline in the quotation is significant.
 
 Create a quote without a trailing newline:
@@ -70,63 +71,58 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	}
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	var repo, rev, path, file, format string
+	var repo, rev, path, file, claimFile, format string
+	provided := make(map[string]bool)
 	for _, opt := range []struct {
 		name     string
 		dst      *string
 		fallback string
-	}{{"repo", &repo, "."}, {"rev", &rev, ""}, {"path", &path, ""}, {"quote-file", &file, ""}, {"format", &format, "text"}} {
+	}{{"repo", &repo, "."}, {"rev", &rev, ""}, {"path", &path, ""}, {"quote-file", &file, ""}, {"claim-file", &claimFile, ""}, {"format", &format, "text"}} {
 		*opt.dst = opt.fallback
-		seen := false
 		flags.Func(opt.name, "", func(value string) error {
-			if seen {
+			if provided[opt.name] {
 				return errors.New("duplicate option")
 			}
-			seen = true
+			provided[opt.name] = true
 			*opt.dst = value
 			return nil
 		})
 	}
-	if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 || file == "" || repo == "" || (format != "text" && format != "json" && format != "markdown") {
+	if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 || repo == "" || (format != "text" && format != "json" && format != "markdown") {
 		fmt.Fprintln(stderr, "Invalid check arguments. Run receipts check --help.")
 		return 2
 	}
-	if err := check.Validate(rev, path); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 2
-	}
-	type input struct {
-		data []byte
-		err  error
-	}
-	read := make(chan input, 1)
-	go func() {
-		if file != "-" {
-			f, err := os.Open(file)
-			if err != nil {
-				read <- input{err: errors.New("cannot open quote file; check its path and permissions")}
-				return
-			}
-			defer f.Close()
-			stdin = f
-		}
-		data, err := io.ReadAll(io.LimitReader(stdin, 2*check.MaxQuote+1))
-		if err != nil || len(data) > 2*check.MaxQuote {
-			err = errors.New("cannot read quote within the 64 KiB normalized limit")
-		}
-		read <- input{data, err}
-	}()
 	var quote []byte
-	select {
-	case result := <-read:
-		if result.err != nil {
-			fmt.Fprintln(stderr, result.err)
+	var err error
+	if provided["claim-file"] {
+		if claimFile == "" || provided["rev"] || provided["path"] || provided["quote-file"] {
+			fmt.Fprintln(stderr, "Supply --claim-file on its own with optional --repo and --format.")
 			return 2
 		}
-		quote = result.data
-	case <-ctx.Done():
+		var data []byte
+		data, err = readInput(ctx, stdin, claimFile, maxClaimFile, "claim")
+		if err == nil {
+			var claim quotation
+			rev, claim, err = readClaim(data)
+			path, quote = claim.path, []byte(claim.text)
+		}
+	} else {
+		if file == "" {
+			fmt.Fprintln(stderr, "Invalid check arguments. Run receipts check --help.")
+			return 2
+		}
+		err = check.Validate(rev, path)
+		if err == nil {
+			quote, err = readInput(ctx, stdin, file, 2*check.MaxQuote, "quote")
+		}
+	}
+	if ctx.Err() != nil {
 		fmt.Fprintln(stderr, "Check interrupted.")
 		return 130
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
 	}
 	clock, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

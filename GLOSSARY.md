@@ -9,3 +9,5 @@ Maintainers use a receipt to review the factual statements in a submission.
 **Verdict** — The result for one claim. Verified means the evidence establishes the claim. Contradicted means the evidence rules it out. Can't check means the available evidence leaves the claim unresolved.
 
 **Receipt** — An itemized record of claims, their verdicts, and the evidence or missing information behind each verdict.
+
+**Claim proposal** — A candidate claim taken from a submission before Receipts checks its evidence. A proposal can leave some statements unresolved.
