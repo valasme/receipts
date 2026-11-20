@@ -14,6 +14,13 @@ For a failed job, inspect the first failing native run, build or install step. C
 
 For a toolchain-only rebuild of an existing source tag, run the Release workflow on main with candidate_tag set to that tag. The package job checks out the unchanged tag, records the compiler and source commit, and scans all six built binaries. A patched compiler can build an older supported language version. For source installation, use a supported Go toolchain with current security patches. The build record and checksum manifest are both attested by the release workflow. The signed build-record.json distinguishes the tagged application source from the workflow revision that produced its assets.
 
+## Recover an interrupted or superseded preview
+
+1. Find the failed release run and confirm the tag resolves to its original source commit. Recover the candidate by rerunning the failed staging job on that run. Keep the candidate artifact and its attestations together. If the original qualification inputs are unavailable, qualify a fresh version separately before staging again.
+2. Check that the draft assets have the same names and hashes as the candidate. Staging resumes missing uploads and stops on a different or unexpected asset. Review the checks before promoting a draft. A published immutable release retains its original identity.
+3. For an incorrect published artifact, pause installation instructions that point to the affected version. Hold any GitHub publisher and identify affected versions, the symptom, the impact and the verified replacement in the advisory. If no verified replacement is available, ask users to stop using the affected version. For an incorrect receipt, ask readers to replay the original claim with the replacement and review any decision that relied on the old receipt.
+4. Verify the replacement's signed checksum manifest and the downloaded file's digest, install in a clean directory and check the version, help and a known fixture. Update the public install guidance and provide a direct archive link if a package index lags. Accept ordinary support requests with synthetic fixtures and route sensitive reports to private reporting. [Issue tracker](https://github.com/valasme/receipts/issues) · [Private security report](https://github.com/valasme/receipts/security/advisories/new)
+
 ## Install the unsigned limited preview
 
 Download the archive matching your OS and processor. Each archive contains the executable, a README, the Apache-2.0 license and third-party notices. [v0.0.1-pre.2 assets](https://github.com/valasme/receipts/releases/tag/v0.0.1-pre.2)
