@@ -14,3 +14,13 @@ archives:
         formats: [zip]
 checksum:
   name_template: checksums.txt
+nfpms:
+  - package_name: receipts
+    maintainer: Receipts maintainers <valasme@users.noreply.github.com>
+    homepage: https://github.com/valasme/receipts
+    description: Offline exact source quotation checker
+    license: Apache-2.0
+    formats: [deb, rpm]
+release:
+  draft: true
+  prerelease: auto

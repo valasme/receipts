@@ -1,12 +1,17 @@
 name: Test
-on: [push, pull_request]
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
 permissions:
   contents: read
 jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025, windows-11-arm]
+    timeout-minutes: 15
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -16,5 +21,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - run: go test ./...
+      - run: go env GOOS GOARCH
+      - run: go vet ./...
+      - run: go test -count=1 ./...
+      - run: go build -o receipts-test.exe ./cmd/receipts
+      - run: python tests/acceptance.py ./receipts-test.exe
       - run: go run ./cmd/receipts --version
