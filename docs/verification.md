@@ -59,4 +59,15 @@ The frozen corpus commit is 1240308. All 60 synthetic cases have ground truth de
 
 The Go-install route was tested against the public pinned module. A local rehearsal restored an earlier working starter after running the tagged binary. One person can verify a failed download, identify the checker version, return to an earlier binary and submit a synthetic fixture privately. Credential rotation and native signing-provider recovery remain untested.
 
-The 12-pair timing study is ready in tests/timing_trial.py. Launch it with a new local results filename, the current checker on PATH and a separate terminal for the assigned tasks. It counterbalances manual/assisted order, creates new tasks, includes quote preparation and records actual responses and elapsed time. No human timings have been collected. Live preview and commenting remain off. The broader checklist distinguishes observed behavior from review questions awaiting human evidence or future scope.
+### Human timing and pilot decision
+
+One human evaluator completed 12 fresh paired tasks using the counterbalanced timing harness. Six pairs ran manual first and six ran Receipts first. The timed window started when the task appeared and ended when the evaluator entered a verdict. The protocol includes finding the revision, preparing the quote and reading the result.
+
+| Method | Correct | Median elapsed time | False contradictions |
+| --- | ---: | ---: | ---: |
+| Manual | 4/12 | 1.84 s | 0/4 |
+| Receipts | 4/12 | 1.43 s | 0/4 |
+
+The median of the 12 paired savings was **21.4%**, below the 25% expansion gate. Receipts was faster in 7/12 pairs. Both methods were answered Verified on every task, including the eight expected contradictions per method. These measurements provide weak evidence of completed review effort. The timing file captures the entered verdict and elapsed time. It has no per-step traces or installed version metadata. A single evaluator on synthetic paired tasks is vulnerable to familiarity, recall and procedure effects. The working file stays private.
+
+**Decision: stop pilot work for this preview.** The 60-case correctness run remains a separate gate with 60/60 correct and 40/40 decisive cases replayed. No live read-only preview or publisher was enabled. Revisit the pilot only after a fresh qualified timing result. [Human timing](https://github.com/valasme/receipts/issues/7) · [Read-only pilot](https://github.com/valasme/receipts/issues/9) · [Comment pilot](https://github.com/valasme/receipts/issues/10)
