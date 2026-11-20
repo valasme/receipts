@@ -186,13 +186,17 @@ func objectFailure(err error, fallback string) string {
 }
 
 // Inspect the complete tree before trusting either a positive or negative lookup.
-func lookup(data []byte, wanted string) (string, string, error) {
+func lookup(data []byte, wanted string, remaining *int) (string, string, error) {
 	var mode, id, previous string
 	seen := make(map[string]bool)
 	for len(data) > 0 {
-		if len(seen) >= 32768 {
-			return "", "", errLimit
+		if len(seen) >= maxTreeEntries {
+			return "", "", treeSizeLimit
 		}
+		if *remaining == 0 {
+			return "", "", treeWorkLimit
+		}
+		*remaining--
 		field, tail, ok := bytes.Cut(data, []byte{0})
 		if !ok || len(tail) < 20 {
 			return "", "", errObject

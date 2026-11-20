@@ -13,15 +13,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 )
 
-const maxBlob = 8 << 20
-
-var errLimit = errors.New("resource_limit")
 var errObject = errors.New("object_unavailable")
 var errStorage = errors.New("unsupported_storage")
 var errNotCommit = errors.New("revision must identify a commit object." + resolveCommitHint)
@@ -32,9 +29,12 @@ type object struct {
 	data []byte
 }
 type store struct {
-	root      *os.Root
-	ctx       context.Context
-	remaining int64
+	root *os.Root
+	ctx  context.Context
+	budget
+	packsLoaded bool
+	packs       []packCandidate
+	packFailure error
 }
 
 func (s *store) commitTree(rev string) (string, error) {
@@ -149,7 +149,7 @@ func (s *store) findPath(treeID, path string) (pathEntry, error) {
 		if tree.kind != "tree" {
 			return pathEntry{}, errObject
 		}
-		mode, id, err := lookup(tree.data, component)
+		mode, id, err := lookup(tree.data, component, &s.treeWork)
 		if err != nil {
 			return pathEntry{}, err
 		}
@@ -196,11 +196,14 @@ func openStore(ctx context.Context, path string) (*store, error) {
 		root.Close()
 		return nil, errObject
 	}
-	return &store{root, ctx, 32 << 20}, nil
+	return &store{root: root, ctx: ctx, budget: newBudget()}, nil
 }
 
 // Git metadata is data only. Restrict opens to ordinary files beneath the root.
 func (s *store) file(name string) (*os.File, error) {
+	if err := s.filesystemOp(); err != nil {
+		return nil, err
+	}
 	info, err := s.root.Lstat(name)
 	if err != nil {
 		return nil, err
@@ -208,57 +211,76 @@ func (s *store) file(name string) (*os.File, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errStorage
 	}
-	return s.root.Open(name)
+	if err := s.filesystemOp(); err != nil {
+		return nil, err
+	}
+	f, err := s.root.OpenFile(name, os.O_RDONLY|objectOpenFlags, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err = f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, errStorage
+	}
+	return f, nil
 }
 
-func (s *store) inflate(r io.Reader, limit int64) ([]byte, error) {
-	if err := s.ctx.Err(); err != nil {
-		return nil, errLimit
+func (s *store) inflate(r io.Reader, limit int64, limitErr limitError) ([]byte, error) {
+	if s.remaining == 0 {
+		return nil, objectBytesLimit
 	}
-	limit = min(limit, s.remaining)
 	z, err := zlib.NewReader(r)
 	if err != nil {
-		return nil, errObject
+		return nil, packReadError(err)
 	}
 	defer z.Close()
-	data, err := io.ReadAll(io.LimitReader(z, limit+1))
-	s.remaining -= int64(len(data))
-	if int64(len(data)) > limit || s.ctx.Err() != nil {
-		return nil, errLimit
-	}
-	if err != nil {
-		return nil, errObject
-	}
-	return data, nil
+	return s.readBounded(z, limit, limitErr)
 }
 
 func (s *store) read(id string) (object, error) {
 	if s.ctx.Err() != nil {
-		return object{}, errLimit
+		return object{}, timeLimit
 	}
 	f, err := s.file("objects/" + id[:2] + "/" + id[2:])
-	var obj object
 	if errors.Is(err, fs.ErrNotExist) {
-		obj, err = s.packed(id)
-	} else if err == nil {
-		defer f.Close()
-		var data []byte
-		data, err = s.inflate(f, maxBlob+64)
-		if err == nil {
-			header, body, ok := bytes.Cut(data, []byte{0})
-			kind, size, split := strings.Cut(string(header), " ")
-			if !ok || !split || size != strconv.Itoa(len(body)) {
-				return object{}, errObject
-			}
-			if len(body) > maxBlob {
-				return object{}, errLimit
-			}
-			obj = object{kind, body}
-		}
+		return s.packed(id)
 	}
 	if err != nil {
 		return object{}, err
 	}
+	defer f.Close()
+	data, err := s.inflate(s.reader(f), maxBlob+64, objectSizeLimit)
+	if err != nil {
+		return object{}, err
+	}
+	obj, err := parseLoose(data)
+	if err != nil {
+		return object{}, err
+	}
+	return verifyIdentity(obj, id)
+}
+
+func parseLoose(data []byte) (object, error) {
+	header, body, ok := bytes.Cut(data, []byte{0})
+	kind, size, split := strings.Cut(string(header), " ")
+	if !ok || !split || size != strconv.Itoa(len(body)) {
+		return object{}, errObject
+	}
+	if len(body) > maxBlob {
+		return object{}, objectSizeLimit
+	}
+	switch kind {
+	case "commit", "tree", "blob", "tag":
+		return object{kind, body}, nil
+	}
+	return object{}, errObject
+}
+
+func verifyIdentity(obj object, id string) (object, error) {
 	hash := sha1.New()
 	fmt.Fprintf(hash, "%s %d\x00", obj.kind, len(obj.data))
 	hash.Write(obj.data)
@@ -268,105 +290,41 @@ func (s *store) read(id string) (object, error) {
 	return obj, nil
 }
 
-// Read bounded v2 indexes. Always verify the reconstructed object's identity.
-func (s *store) packed(id string) (object, error) {
-	info, err := s.root.Stat("objects/pack")
-	if err != nil || !info.IsDir() {
-		return object{}, errObject
-	}
-	dir, err := s.root.Open("objects/pack")
-	if err != nil {
-		return object{}, errObject
-	}
-	defer dir.Close()
-	entries, err := dir.ReadDir(257)
-	if err != nil && err != io.EOF {
-		return object{}, errObject
-	}
-	if len(entries) > 256 {
-		return object{}, errLimit
-	}
-	key, _ := hex.DecodeString(id)
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasPrefix(name, "pack-") || !strings.HasSuffix(name, ".idx") {
-			continue
-		}
-		index, err := s.file("objects/pack/" + name)
-		if err != nil {
-			return object{}, errObject
-		}
-		limit := min(s.remaining, int64(4<<20))
-		data, err := io.ReadAll(io.LimitReader(index, limit+1))
-		index.Close()
-		s.remaining -= int64(len(data))
-		if int64(len(data)) > limit || s.ctx.Err() != nil {
-			return object{}, errLimit
-		}
-		if err != nil || len(data) < 1032 || !bytes.Equal(data[:8], []byte{255, 't', 'O', 'c', 0, 0, 0, 2}) {
-			return object{}, errStorage
-		}
-		count64 := uint64(binary.BigEndian.Uint32(data[1028:]))
-		if count64 > uint64((len(data)-1032)/28) {
-			return object{}, errObject
-		}
-		count := int(count64)
-		names := data[1032 : 1032+20*count]
-		i := sort.Search(count, func(i int) bool { return bytes.Compare(names[20*i:20*i+20], key) >= 0 })
-		if i == count || !bytes.Equal(names[20*i:20*i+20], key) {
-			continue
-		}
-		offsets := data[1032+24*count:]
-		off := uint64(binary.BigEndian.Uint32(offsets[4*i:]))
-		if off >= 1<<31 {
-			pos := uint64(4*count) + (off-(1<<31))*8
-			if pos+8 > uint64(len(offsets)) {
-				return object{}, errObject
-			}
-			off = binary.BigEndian.Uint64(offsets[pos:])
-		}
-		f, err := s.file("objects/pack/" + strings.TrimSuffix(name, ".idx") + ".pack")
-		if err != nil {
-			return object{}, errObject
-		}
-		defer f.Close()
-		return s.packEntry(f, int64(off), 0)
-	}
-	return object{}, errObject
-}
-
 func (s *store) packEntry(f *os.File, offset int64, depth int) (object, error) {
-	if offset < 12 {
+	if offset < 12 || offset > math.MaxInt64-(2*maxBlob+1024) {
 		return object{}, errObject
 	}
-	if depth > 16 || s.ctx.Err() != nil {
-		return object{}, errLimit
+	if depth > maxDeltaDepth {
+		return object{}, deltaDepthLimit
 	}
-	r := bufio.NewReader(io.NewSectionReader(f, offset, 2*maxBlob+1024))
+	if err := s.filesystemOp(); err != nil {
+		return object{}, err
+	}
+	r := bufio.NewReader(s.reader(io.NewSectionReader(f, offset, 2*maxBlob+1024)))
 	first, err := r.ReadByte()
 	if err != nil {
-		return object{}, errObject
+		return object{}, packReadError(err)
 	}
 	typ := (first >> 4) & 7
 	size := int64(first & 15)
 	for b, shift := first, uint(4); b&128 != 0; shift += 7 {
 		b, err = r.ReadByte()
 		if err != nil {
-			return object{}, errObject
+			return object{}, packReadError(err)
 		}
 		if shift > 25 {
-			return object{}, errLimit
+			return object{}, objectSizeLimit
 		}
 		size |= int64(b&127) << shift
 	}
 	if size > maxBlob {
-		return object{}, errLimit
+		return object{}, objectSizeLimit
 	}
 	var baseOffset int64
 	if typ == 6 {
 		b, err := r.ReadByte()
 		if err != nil {
-			return object{}, errObject
+			return object{}, packReadError(err)
 		}
 		distance := int64(b & 127)
 		for b&128 != 0 {
@@ -375,7 +333,7 @@ func (s *store) packEntry(f *os.File, offset int64, depth int) (object, error) {
 			}
 			b, err = r.ReadByte()
 			if err != nil {
-				return object{}, errObject
+				return object{}, packReadError(err)
 			}
 			distance = (distance+1)*128 + int64(b&127)
 		}
@@ -383,10 +341,12 @@ func (s *store) packEntry(f *os.File, offset int64, depth int) (object, error) {
 			return object{}, errObject
 		}
 		baseOffset = offset - distance
+	} else if typ == 7 {
+		return object{}, fmt.Errorf("%w: reference delta", errStorage)
 	} else if typ < 1 || typ > 4 {
-		return object{}, errStorage
+		return object{}, errObject
 	}
-	data, err := s.inflate(r, size)
+	data, err := s.inflate(r, size, objectSizeLimit)
 	if err != nil {
 		return object{}, err
 	}
@@ -414,8 +374,11 @@ func (s *store) applyDelta(base, delta []byte) ([]byte, error) {
 	if n <= 0 {
 		return nil, errObject
 	}
-	if target > maxBlob || int64(target) > s.remaining {
-		return nil, errLimit
+	if target > maxBlob {
+		return nil, objectSizeLimit
+	}
+	if int64(target) > s.remaining {
+		return nil, objectBytesLimit
 	}
 	s.remaining -= int64(target)
 	delta = delta[n:]

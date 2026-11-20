@@ -1,10 +1,14 @@
 """Additional black-box storage and budget tests; requires working Git."""
 
+import os
+import shutil
+import subprocess
 import tempfile
 import zlib
 from pathlib import Path
 
-from acceptance import check, git
+from acceptance import binary, check, env, git
+from edge_cases import raw_object
 
 
 def exercise(repo):
@@ -50,7 +54,89 @@ def exercise(repo):
     )
 
 
+def packed_candidates(repo):
+    git(repo, "init", "-q", "--object-format=sha1")
+    blob = raw_object(repo, "blob", b"sample")
+    tree = None
+    nested = ""
+    for depth in range(10):
+        entries = f"100644 blob {blob}\titem\n"
+        if depth:
+            entries += f"040000 tree {tree}\tsub\n"
+            nested += "sub/"
+        tree = subprocess.check_output(
+            ["git", "-C", repo, "mktree"], input=entries.encode(), env=env
+        ).strip().decode()
+    rev = git(repo, "commit-tree", tree, "-m", "packed paths")
+    git(repo, "update-ref", "refs/heads/packed", rev)
+    # Unrelated objects make rereading a valid index during the deep lookup
+    # exceed the shared byte budget. Pack and validate them with Git itself.
+    stream = b"".join(b"blob\ndata 6\n%06d\n" % i for i in range(120000))
+    with tempfile.TemporaryFile() as emitted:
+        subprocess.run(
+            ["git", "-C", repo, "fast-import", "--quiet"],
+            input=stream + b"done\n", stdout=emitted, env=env, check=True,
+        )
+    packdir = repo / ".git/objects/pack"
+    objects = git(repo, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
+    indexes = list(packdir.glob("*.idx"))
+    subprocess.run(
+        ["git", "-C", repo, "pack-objects", "--delta-base-offset", packdir / "pack"],
+        input=(objects + "\n").encode(), env=env, check=True, stdout=subprocess.DEVNULL,
+    )
+    for old in indexes:
+        old.unlink()
+        old.with_suffix(".pack").unlink()
+    git(repo, "prune-packed")
+    idx = next(packdir.glob("*.idx"))
+    assert idx.stat().st_size > 3 << 20
+    assert git(repo, "cat-file", "blob", f"{rev}:{nested}item") == "sample"
+    assert check(repo, rev, "item", b"sample")["verdict"] == "verified"
+    assert check(repo, rev, nested + "item", b"sample")["verdict"] == "verified"
+
+    # A matching but unreadable copy may appear before or after the usable one.
+    valid_idx = packdir / "pack-mid.idx"
+    idx.rename(valid_idx)
+    idx.with_suffix(".pack").rename(valid_idx.with_suffix(".pack"))
+    for name in ["pack-aaa.idx", "pack-zzz.idx"]:
+        failed = packdir / name
+        shutil.copyfile(valid_idx, failed)
+        assert check(repo, rev, "item", b"sample")["verdict"] == "verified"
+        failed.unlink()
+
+    failed = packdir / "pack-aaa.idx"
+    git(repo, "index-pack", "--index-version=1", "-o", str(failed), str(valid_idx.with_suffix(".pack")))
+    for i in range(300):
+        (packdir / f"auxiliary-{i:04d}").touch()
+    assert check(repo, rev, "item", b"sample")["verdict"] == "verified"
+    valid_idx.unlink()
+    assert check(repo, rev, "item", b"sample")["reason"] == "unsupported_storage"
+
+
+def special_object(repo):
+    git(repo, "init", "-q", "--object-format=sha1")
+    # A directory or a pipe is not Git object storage even at an object name.
+    rev = "a" * 40
+    leaf = repo / ".git/objects" / rev[:2] / rev[2:]
+    leaf.parent.mkdir()
+    leaf.mkdir()
+    assert check(repo, rev, "item", b"x")["reason"] == "unsupported_storage"
+    leaf.rmdir()
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(leaf)
+        result = subprocess.run(
+            [binary, "check", "--repo", repo, "--rev", rev, "--path", "item",
+             "--quote-file", "-"],
+            input=b"x", capture_output=True, timeout=2,
+        )
+        assert result.returncode == 0 and b"unsupported_storage" in result.stdout
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as d:
         exercise(Path(d))
-    print("Deltas, damaged and absent objects, and byte limits passed")
+    with tempfile.TemporaryDirectory() as d:
+        packed_candidates(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        special_object(Path(d))
+    print("Deltas, pack candidates, damaged and absent objects, file types, and byte limits passed")
