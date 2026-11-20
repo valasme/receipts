@@ -35,9 +35,29 @@ type store struct {
 	packsLoaded bool
 	packs       []packCandidate
 	packFailure error
+	commits     map[string]commitObservation
+	blobID      string
+	blobData    []byte
+}
+
+type commitObservation struct {
+	tree string
+	err  error
 }
 
 func (s *store) commitTree(rev string) (string, error) {
+	if observed, ok := s.commits[rev]; ok {
+		return observed.tree, observed.err
+	}
+	tree, err := s.readCommitTree(rev)
+	if s.commits == nil {
+		s.commits = make(map[string]commitObservation)
+	}
+	s.commits[rev] = commitObservation{tree, err}
+	return tree, err
+}
+
+func (s *store) readCommitTree(rev string) (string, error) {
 	commit, err := s.read(rev)
 	if err != nil {
 		return "", err
@@ -168,6 +188,9 @@ func (s *store) findPath(treeID, path string) (pathEntry, error) {
 }
 
 func (s *store) readBlob(id string) ([]byte, error) {
+	if id == s.blobID {
+		return s.blobData, nil
+	}
 	blob, err := s.read(id)
 	if err != nil {
 		return nil, err
@@ -175,6 +198,7 @@ func (s *store) readBlob(id string) ([]byte, error) {
 	if blob.kind != "blob" {
 		return nil, errObject
 	}
+	s.blobID, s.blobData = id, blob.data
 	return blob.data, nil
 }
 

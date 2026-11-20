@@ -77,6 +77,12 @@ func Validate(rev, path string) error {
 }
 
 func Verify(ctx context.Context, repo, rev, path string, quote []byte, version string) (Receipt, error) {
+	i := NewInspection(ctx, repo, version)
+	defer i.Close()
+	return i.Verify(rev, path, quote)
+}
+
+func (i *Inspection) Verify(rev, path string, quote []byte) (Receipt, error) {
 	if err := Validate(rev, path); err != nil {
 		return Receipt{}, err
 	}
@@ -86,37 +92,18 @@ func Verify(ctx context.Context, repo, rev, path string, quote []byte, version s
 	}
 	rev = strings.ToLower(rev)
 	digest := sha256.Sum256(quote)
-	r := Receipt{Schema: 1, Version: version, Rule: "utf8-crlf-to-lf-v1", Claim: Claim{"exact_source_quote", rev, path, hex.EncodeToString(digest[:])}, Verdict: "cant_check", Reason: "revision_unavailable"}
-	if ctx.Err() != nil {
-		return unresolved(r, timeLimit), nil
-	}
-	// A blocking filesystem read can outlive a cooperative deadline.
-	// Return the inconclusive receipt on time.
-	type result struct {
-		receipt Receipt
-		err     error
-	}
-	done := make(chan result, 1)
-	go func() { checked, err := inspect(ctx, repo, r, quote); done <- result{checked, err} }()
-	select {
-	case completed := <-done:
-		if ctx.Err() != nil {
-			return unresolved(r, timeLimit), nil
+	r := Receipt{Schema: 1, Version: i.version, Rule: "utf8-crlf-to-lf-v1", Claim: Claim{"exact_source_quote", rev, path, hex.EncodeToString(digest[:])}, Verdict: "cant_check", Reason: "revision_unavailable"}
+	return observe(i, unresolved(r, timeLimit), func(s *store, err error) (Receipt, error) {
+		if err != nil {
+			r.Reason = "repository_unavailable"
+			return unresolved(r, err), nil
 		}
-		return completed.receipt, completed.err
-	case <-ctx.Done():
-		return unresolved(r, timeLimit), nil
-	}
+		return inspectQuote(s, r, quote)
+	})
 }
 
-func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt, error) {
+func inspectQuote(s *store, r Receipt, quote []byte) (Receipt, error) {
 	rev, path := r.Claim.Revision, r.Claim.Path
-	s, err := openStore(ctx, repo)
-	if err != nil {
-		r.Reason = "repository_unavailable"
-		return unresolved(r, err), nil
-	}
-	defer s.root.Close()
 	treeID, err := s.commitTree(rev)
 	if err != nil {
 		if errors.Is(err, errNotCommit) {
@@ -155,7 +142,7 @@ func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt
 	}
 	source := normalize(blob)
 	at := bytes.Index(source, quote)
-	if ctx.Err() != nil {
+	if s.ctx.Err() != nil {
 		return unresolved(r, timeLimit), nil
 	}
 	if at < 0 {

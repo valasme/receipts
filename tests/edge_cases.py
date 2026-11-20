@@ -1,5 +1,6 @@
 """Boundary inputs and independent Git witnesses against the installed CLI."""
 
+import json
 import os
 import subprocess
 import tempfile
@@ -148,6 +149,24 @@ def suite(repo):
     )
     broad = git(repo, "commit-tree", tree, "-m", "wide")
     assert check(repo, broad, "absent", b"x")["reason"] == "resource_limit"
+    # Each individual lookup fits. The fifth lookup shares the same
+    # command-wide tree budget as the earlier four.
+    boundary = subprocess.check_output(
+        ["git", "-C", repo, "mktree"], input=lines.rsplit(b"\n", 2)[0] + b"\n",
+        env=env,
+    ).strip().decode()
+    rev = git(repo, "commit-tree", boundary, "-m", "batch tree budget")
+    batch = {
+        "schema_major": 1, "rev": rev,
+        "claims": [{"path": f"missing{i}", "quote": "x"} for i in range(5)],
+    }
+    output = subprocess.check_output(
+        [binary, "check", "--repo", repo, "--batch-file", "-"],
+        input=json.dumps(batch).encode(),
+    )
+    receipts = [item["receipt"] for item in json.loads(output)["results"]]
+    assert [r["reason"] for r in receipts] == ["path_absent"] * 4 + ["resource_limit"]
+    assert "cumulative tree entries" in receipts[-1]["detail"]
 
 
 def storage_selection(root):

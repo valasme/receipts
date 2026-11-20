@@ -30,6 +30,12 @@ type fileObservation struct {
 }
 
 func VerifyFileChange(ctx context.Context, repo, comparison, head, path string) (FileChangeReceipt, error) {
+	i := NewInspection(ctx, repo, "dev")
+	defer i.Close()
+	return i.VerifyFileChange(comparison, head, path)
+}
+
+func (i *Inspection) VerifyFileChange(comparison, head, path string) (FileChangeReceipt, error) {
 	if err := ValidateRevision(comparison); err != nil {
 		return FileChangeReceipt{}, fmt.Errorf("comparison commit: %w", err)
 	}
@@ -46,40 +52,20 @@ func VerifyFileChange(ctx context.Context, repo, comparison, head, path string) 
 	timeout.head.failure = errLimit.Error()
 	timeout.comparison.detail = string(timeLimit)
 	timeout.head.detail = string(timeLimit)
-	if ctx.Err() != nil {
-		return timeout, nil
-	}
-	// Allow the review deadline to expire even if a filesystem read blocks.
-	type result struct {
-		receipt FileChangeReceipt
-		err     error
-	}
-	done := make(chan result, 1)
-	go func() {
-		checked, err := inspectFileChange(ctx, repo, receipt)
-		done <- result{checked, err}
-	}()
-	select {
-	case checked := <-done:
-		if ctx.Err() == nil {
-			return checked.receipt, checked.err
+	return observe(i, timeout, func(s *store, err error) (FileChangeReceipt, error) {
+		if err != nil {
+			reason := objectFailure(err, "repository_unavailable")
+			receipt.comparison.failure = reason
+			receipt.head.failure = reason
+			receipt.comparison.detail = failureDetail(err)
+			receipt.head.detail = failureDetail(err)
+			return receipt, nil
 		}
-	case <-ctx.Done():
-	}
-	return timeout, nil
+		return inspectFileChange(s, receipt)
+	})
 }
 
-func inspectFileChange(ctx context.Context, repo string, receipt FileChangeReceipt) (FileChangeReceipt, error) {
-	s, err := openStore(ctx, repo)
-	if err != nil {
-		reason := objectFailure(err, "repository_unavailable")
-		receipt.comparison.failure = reason
-		receipt.head.failure = reason
-		receipt.comparison.detail = failureDetail(err)
-		receipt.head.detail = failureDetail(err)
-		return receipt, nil
-	}
-	defer s.root.Close()
+func inspectFileChange(s *store, receipt FileChangeReceipt) (FileChangeReceipt, error) {
 	if err := receipt.comparison.inspect(s, receipt.path); err != nil {
 		return FileChangeReceipt{}, fmt.Errorf("comparison commit: %w", err)
 	}
