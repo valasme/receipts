@@ -105,12 +105,12 @@ def golden():
         data = json.dumps({"schema_major": 1, "rev": REV, "claims": [
             {"path": blocked_path, "quote": "line two"},
         ]}).encode()
-        for fmt, receipt in (("json", blocked), ("json-evidence", detail)):
+        for fmt, document in (("json", blocked), ("json-evidence", detail)):
             output = subprocess.check_output(
                 [binary, "check", "--repo", directory, "--batch-file", "-", "--format", fmt],
                 input=data, timeout=20,
             )
-            result = {"schema_major": 1, "results": [{"receipt": receipt}]}
+            result = {"schema_major": 1, "results": [{"receipt": document}]}
             assert output == json.dumps(result, separators=(",", ":")).encode() + b"\n"
     print("Matched frozen commit and exact receipt bytes.")
 
