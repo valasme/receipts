@@ -45,12 +45,14 @@ type Receipt struct {
 
 func normalize(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
 
+const resolveCommitHint = " Run git rev-parse --verify 'TAG^{commit}' with your tag or branch, then pass the result to --rev."
+
 func Validate(rev, path string) error {
 	if len(rev) == 64 {
 		return errors.New("SHA-256 repositories are unsupported; supply a SHA-1 commit ID")
 	}
 	if len(rev) != 40 {
-		return errors.New("supply a full 40-digit commit ID")
+		return errors.New("supply a full 40-digit commit ID." + resolveCommitHint)
 	}
 	if _, err := hex.DecodeString(rev); err != nil {
 		return errors.New("commit ID must be hexadecimal")
@@ -109,7 +111,7 @@ func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt
 		return unresolved(r, err), nil
 	}
 	if commit.kind != "commit" {
-		return Receipt{}, errors.New("revision must identify a commit object")
+		return Receipt{}, errors.New("revision must identify a commit object." + resolveCommitHint)
 	}
 	header, _, ok := bytes.Cut(commit.data, []byte("\n"))
 	if !ok || len(header) != 45 || !bytes.HasPrefix(header, []byte("tree ")) {

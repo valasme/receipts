@@ -19,8 +19,19 @@ def suite(repo):
     rev = git(repo, "rev-parse", "HEAD")
     original = git(repo, "rev-parse", rev + ":" + name)
     git(repo, "tag", "-am", "annotation", "sample")
-    for obj in ["sample^{tag}", "HEAD^{tree}"]:
-        check(repo, git(repo, "rev-parse", obj), name, b"a", expected=2)
+    for invalid_rev in ["sample", git(repo, "rev-parse", "sample^{tag}")]:
+        result = subprocess.run(
+            [binary, "check", "--repo", repo, "--rev", invalid_rev,
+             "--path", name, "--quote-file", "-"],
+            input=b"a",
+            capture_output=True,
+        )
+        assert result.returncode == 2 and not result.stdout
+        assert b"git rev-parse --verify 'TAG^{commit}'" in result.stderr
+    recovered = git(repo, "rev-parse", "--verify", "sample^{commit}")
+    assert recovered == rev
+    assert check(repo, recovered, name, b"a")["verdict"] == "verified"
+    check(repo, git(repo, "rev-parse", "HEAD^{tree}"), name, b"a", expected=2)
     git(repo, "checkout", "-q", "--detach", rev)
     (repo / name).write_bytes(b"staged")
     git(repo, "add", name)
