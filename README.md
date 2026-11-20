@@ -46,6 +46,37 @@ Expect `Verified · exact source quote` and line 1. Change the quoted text to `#
 
 Use a full SHA-1 commit ID and a repository-root-relative path for your own claims. Pass `--quote-file -` for stdin. Include the final newline if it is part of the quotation. CRLF and LF match. Other whitespace, letter case and Unicode composition remain significant.
 
+### Check a multiline quote
+
+These examples check the first three lines of the tagged `go.mod`, including the blank line and the newline after `go 1.25.0`. Each should report **Verified** on lines 1–3.
+
+On Linux or macOS, a quoted here-document sends literal text to stdin:
+
+```sh
+rev=$(git rev-parse --verify 'v0.0.1-pre.2^{commit}') &&
+  receipts check --repo . --rev "$rev" --path go.mod --quote-file - <<'QUOTE'
+module github.com/valasme/receipts
+
+go 1.25.0
+QUOTE
+```
+
+To use a UTF-8 file you already have, replace `--quote-file -` with `--quote-file path/to/excerpt.txt`. In PowerShell, write the text to a file so its encoding and final newline are explicit:
+
+```powershell
+$rev = git rev-parse --verify 'v0.0.1-pre.2^{commit}'
+if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the release tag to a commit.' }
+$quote = [IO.Path]::GetTempFileName()
+try {
+    [IO.File]::WriteAllText($quote, "module github.com/valasme/receipts`n`ngo 1.25.0`n")
+    receipts check --repo . --rev $rev --path go.mod --quote-file $quote
+} finally {
+    Remove-Item -LiteralPath $quote
+}
+```
+
+Keep indentation and blank lines from the original. Save UTF-8 without a byte-order mark unless the quotation itself contains one. To check a quote that ends without a newline, omit the final newline in the file. A POSIX here-document adds one after its last line.
+
 ## Read the result
 
 **Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.

@@ -40,7 +40,7 @@ def git(repo, *args):
     )
 
 
-def check(repo, rev, path, quote, fmt="json", expected=0):
+def check(repo, rev, path, quote, fmt="json", expected=0, *, quote_file=None):
     p = subprocess.run(
         [
             binary,
@@ -52,12 +52,12 @@ def check(repo, rev, path, quote, fmt="json", expected=0):
             "--path",
             path,
             "--quote-file",
-            "-",
+            quote_file if quote_file is not None else "-",
             "--format",
             fmt,
         ],
         check=False,
-        input=quote,
+        input=quote if quote_file is None else None,
         capture_output=True,
     )
     assert p.returncode == expected, (p.returncode, p.stdout, p.stderr)
@@ -78,6 +78,7 @@ def suite(repo, packed):
     git(repo, "config", "core.autocrlf", "false")
     (repo / "src").mkdir()
     (repo / "src/a.txt").write_bytes(b"first\r\nBlue\r\nBlue\r\nlast")
+    (repo / "src/multiline.txt").write_bytes("first\ncafé\n  second\nlast".encode("utf-8"))
     (repo / "bin").write_bytes(b"x\x00y")
     (repo / "invalid").write_bytes(b"\xff")
     (repo / "pointer").write_bytes(
@@ -125,6 +126,22 @@ def suite(repo, packed):
         if verdict == "verified":
             assert r["evidence"]["blob_id"] == blob
             assert r["evidence"]["lines"] == {"start": 2, "end": 3}
+    with tempfile.TemporaryDirectory() as directory:
+        quote_file = Path(directory) / "multiline excerpt.txt"
+        for text, normalized, verdict, lines in [
+            ("café\r\n  second\r\n", "café\n  second\n", "verified", {"start": 2, "end": 3}),
+            ("  second\nlast", "  second\nlast", "verified", {"start": 3, "end": 4}),
+            ("  second\nlast\n", "  second\nlast\n", "contradicted", None),
+        ]:
+            quote = text.encode("utf-8")
+            quote_file.write_bytes(quote)
+            receipt = check(repo, rev, "src/multiline.txt", quote)
+            assert check(repo, rev, "src/multiline.txt", None, quote_file=quote_file) == receipt
+            assert receipt["verdict"] == verdict
+            assert receipt["claim"]["quote_sha256"] == hashlib.sha256(
+                normalized.encode("utf-8")
+            ).hexdigest()
+            assert receipt["evidence"].get("lines") == lines
     assert check(repo, "0" * 40, "src/a.txt", b"x")["verdict"] == "cant_check"
     for path in ["../x", "/etc/passwd", "c:/x", "a//b", "a\\b", "a\u202eb"]:
         check(repo, rev, path, b"x", expected=2)
