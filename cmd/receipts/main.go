@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strings"
-	"time"
 
 	"github.com/valasme/receipts"
 	"github.com/valasme/receipts/internal/check"
@@ -20,18 +19,22 @@ import (
 var version = "dev"
 
 const help = `Usage: receipts check --rev COMMIT --path PATH --quote-file FILE [--repo DIR] [--format FORMAT]
+       receipts check --claim-file FILE [--repo DIR] [--format FORMAT]
+       receipts check --batch-file FILE [--repo DIR] [--format json]
        receipts --help | --version | --licenses
 
 Check an exact source quotation in a committed file. Use a full SHA-1
 commit ID and a repository-relative path. The repository defaults to ".".
-Pass - as the quote file to read stdin. Formats: text, json, markdown.
+Pass - as a file to read stdin. Single claim formats: text, json, markdown.
+A batch checks up to 16 claims at one commit and returns ordered JSON results.
 A final newline in the quotation is significant.
 
 Create a quote without a trailing newline:
   POSIX:      printf %s 'example' > excerpt.txt
   PowerShell: [IO.File]::WriteAllText("$PWD/excerpt.txt", 'example')
 
-Exit 0: completed receipt. Exit 2: invalid input. Exit 1: output failure.
+Exit 0: completed receipt or batch, including per-item errors in a batch.
+Exit 2: invalid invocation. Exit 1: output failure.
 `
 
 func buildVersion() string {
@@ -70,65 +73,71 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	}
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	var repo, rev, path, file, format string
+	var repo, rev, path, file, claimFile, batchFile, format string
+	provided := make(map[string]bool)
 	for _, opt := range []struct {
 		name     string
 		dst      *string
 		fallback string
-	}{{"repo", &repo, "."}, {"rev", &rev, ""}, {"path", &path, ""}, {"quote-file", &file, ""}, {"format", &format, "text"}} {
+	}{{"repo", &repo, "."}, {"rev", &rev, ""}, {"path", &path, ""}, {"quote-file", &file, ""}, {"claim-file", &claimFile, ""}, {"batch-file", &batchFile, ""}, {"format", &format, "text"}} {
 		*opt.dst = opt.fallback
-		seen := false
 		flags.Func(opt.name, "", func(value string) error {
-			if seen {
+			if provided[opt.name] {
 				return errors.New("duplicate option")
 			}
-			seen = true
+			provided[opt.name] = true
 			*opt.dst = value
 			return nil
 		})
 	}
-	if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 || file == "" || repo == "" || (format != "text" && format != "json" && format != "markdown") {
+	if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 || repo == "" || (format != "text" && format != "json" && format != "markdown") {
 		fmt.Fprintln(stderr, "Invalid check arguments. Run receipts check --help.")
 		return 2
 	}
-	if err := check.Validate(rev, path); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 2
-	}
-	type input struct {
-		data []byte
-		err  error
-	}
-	read := make(chan input, 1)
-	go func() {
-		if file != "-" {
-			f, err := os.Open(file)
-			if err != nil {
-				read <- input{err: errors.New("cannot open quote file; check its path and permissions")}
-				return
-			}
-			defer f.Close()
-			stdin = f
-		}
-		data, err := io.ReadAll(io.LimitReader(stdin, 2*check.MaxQuote+1))
-		if err != nil || len(data) > 2*check.MaxQuote {
-			err = errors.New("cannot read quote within the 64 KiB normalized limit")
-		}
-		read <- input{data, err}
-	}()
-	var quote []byte
-	select {
-	case result := <-read:
-		if result.err != nil {
-			fmt.Fprintln(stderr, result.err)
+	legacyFlags := provided["rev"] || provided["path"] || provided["quote-file"]
+	if provided["batch-file"] {
+		if batchFile == "" || provided["claim-file"] || legacyFlags || (provided["format"] && format != "json") {
+			fmt.Fprintln(stderr, "Supply --batch-file on its own with optional --repo and --format json.")
 			return 2
 		}
-		quote = result.data
-	case <-ctx.Done():
+		return executeBatch(ctx, stdin, stdout, stderr, repo, batchFile)
+	}
+	var quote []byte
+	var err error
+	if provided["claim-file"] {
+		if claimFile == "" || legacyFlags {
+			fmt.Fprintln(stderr, "Supply --claim-file on its own with optional --repo and --format.")
+			return 2
+		}
+		var data []byte
+		data, err = readInput(ctx, stdin, claimFile, maxClaimFile, "claim")
+		if err == nil {
+			var claim quotation
+			rev, claim, err = readClaim(data)
+			path, quote = claim.path, []byte(claim.text)
+		}
+	} else {
+		if file == "" {
+			fmt.Fprintln(stderr, "Invalid check arguments. Run receipts check --help.")
+			return 2
+		}
+		err = check.Validate(rev, path)
+		if err == nil {
+			quote, err = readInput(ctx, stdin, file, 2*check.MaxQuote, "quote")
+			if errors.Is(err, errInputRead) {
+				err = errors.New("cannot read quote within the 64 KiB normalized limit")
+			}
+		}
+	}
+	if ctx.Err() != nil {
 		fmt.Fprintln(stderr, "Check interrupted.")
 		return 130
 	}
-	clock, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	clock, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	receipt, err := check.Verify(clock, repo, rev, path, quote, buildVersion())
 	if ctx.Err() != nil {
@@ -139,20 +148,24 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
+	if format == "json" {
+		return deliverJSON(stdout, stderr, receipt)
+	}
 	output := receipt.Text()
-	switch format {
-	case "json":
-		data, err := json.Marshal(receipt)
-		if err != nil {
-			fmt.Fprintln(stderr, "Cannot encode receipt.")
-			return 1
-		}
-		output = string(data) + "\n"
-	case "markdown":
+	if format == "markdown" {
 		output = "    " + strings.ReplaceAll(strings.TrimSuffix(output, "\n"), "\n", "\n    ") + "\n"
 	}
 	return deliver(stdout, stderr, output)
 }
+func deliverJSON(stdout, stderr io.Writer, value any) int {
+	data, err := json.Marshal(value)
+	if err != nil {
+		fmt.Fprintln(stderr, "Cannot encode receipt.")
+		return 1
+	}
+	return deliver(stdout, stderr, string(data)+"\n")
+}
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := execute(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)

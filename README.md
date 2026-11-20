@@ -77,6 +77,26 @@ try {
 
 Keep indentation and blank lines from the original. Save UTF-8 without a byte-order mark unless the quotation itself contains one. To check a quote that ends without a newline, omit the final newline in the file. A POSIX here-document adds one after its last line.
 
+## Check saved claims from an agent
+
+The development build accepts versioned UTF-8 JSON claim files. As the caller, select the local repository and supply the full commit ID. An agent can propose the repository-relative path and literal quote. Save all three so another reader can replay the check.
+
+```json
+{"schema_major":1,"rev":"0123456789abcdef0123456789abcdef01234567","path":"README.md","quote":"# Receipts\n"}
+```
+
+Replace the example commit with your full commit ID. Run `receipts check --repo . --claim-file claim.json --format json`. Single claims support all three renderers and produce the same receipt as the corresponding flags. Keep the saved file private when it contains sensitive source text.
+
+For a batch, use one commit and a list of quotations:
+
+```json
+{"schema_major":1,"rev":"0123456789abcdef0123456789abcdef01234567","claims":[{"path":"README.md","quote":"# Receipts\n"},{"path":"go.mod","quote":"go 1.25.0\n"}]}
+```
+
+Run `receipts check --repo . --batch-file batch.json`. The output is a JSON object with `schema_major: 1` and `results` in input order. Each result has a `receipt` using the existing receipt schema or an `error` with a diagnostic for invalid input. An unavailable object yields a receipt with verdict `cant_check`. A complete batch exits 0 even when some items have errors. An invalid envelope exits 2 with a diagnostic on stderr. Use `-` as either file name to read stdin.
+
+The single-claim input limit is 768 KiB. A batch can contain 1–16 claims, with at most 1 MiB of input and a shared five-second lookup budget. Use the exact JSON field names and include each field once. Existing path and quote limits apply to each claim. See the [working agent example](examples/agent/README.md) for a PR-to-receipt walkthrough.
+
 ## Read the result
 
 **Verified** includes the blob ID and first matching line range. **Contradicted** cites a complete search or a tree proving that a path component was absent. **Can't check** explains missing objects, unsupported content or exhausted budgets. The verdict describes the citation only. Keep the original quote to replay the check.
