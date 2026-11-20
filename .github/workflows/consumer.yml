@@ -81,3 +81,35 @@ jobs:
           & "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe" --version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           winget uninstall --id Valasme.Receipts.Preview --exact --disable-interactivity
+      - name: Exercise Scoop preview manifest in an isolated user tree
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:SCOOP = Join-Path $env:RUNNER_TEMP 'receipts-scoop'
+          $scoopRoot = Join-Path $env:SCOOP 'apps/scoop/current'
+          git init -q $scoopRoot
+          git -C $scoopRoot fetch -q --depth 1 https://github.com/ScoopInstaller/Scoop.git e6aa3b366bdee8ed138c1e0f7b85192ebdd35d0f
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $scoopRoot checkout -q --detach FETCH_HEAD
+          $scoop = Join-Path $scoopRoot 'bin/scoop.ps1'
+          Expand-Archive bundle/preview-installers.zip -DestinationPath scoop-input
+          & $scoop install (Resolve-Path 'scoop-input/bucket/receipts.json').Path
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$env:SCOOP/apps/receipts/current/receipts.exe" --version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $scoop uninstall receipts
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install the tagged public Go module
+        shell: bash
+        env:
+          GOPROXY: direct
+        run: |
+          cd "$RUNNER_TEMP"
+          go install "github.com/valasme/receipts/cmd/receipts@$TAG"
+          installed="$(go env GOPATH)/bin/receipts"
+          if [[ "$RUNNER_OS" == Windows ]]; then installed="$(cygpath -u "$installed").exe"; fi
+          [[ "$("$installed" --version)" == "receipts $TAG" ]]
+          rm "$installed"

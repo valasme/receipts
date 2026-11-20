@@ -47,7 +47,7 @@ def smoke(bundle):
             dest.chmod(0o755)
         actual = subprocess.check_output([dest, "--version"], text=True).strip()
         assert actual == "receipts " + version, (actual, version)
-        for script in ["acceptance.py", "storage.py", "evaluate.py"]:
+        for script in ["acceptance.py", "storage.py", "golden.py", "evaluate.py"]:
             subprocess.run(
                 [sys.executable, Path(__file__).with_name(script), dest], check=True
             )
