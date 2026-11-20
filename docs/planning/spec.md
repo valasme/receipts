@@ -73,6 +73,10 @@ Reconstruct labeled fixture repositories and use the installed CLI as a reader w
 
 Ship local alpha when all normative contract cases pass, there are zero false contradictions in a frozen holdout, every decisive result replays, required artifacts match their checksums, and installation plus removal succeeds on each supported platform class. Report numerator and denominator and cases skipped per platform. Cross-compilation proves packaging only. Mark unexercised OS/architecture combinations explicitly as preview. If an artifact fails its own integrity check, withhold that artifact. If verdict correctness fails, hold the release. Publish benchmark misses, support tier and known limits alongside archives.
 
+## Infrastructure pre-alpha
+
+The [infrastructure pre-alpha milestone](https://github.com/valasme/receipts/milestone/1) qualifies the starter before the first checker. It covers the CLI shell, accessible help, error delivery, bundled documentation, native CI, packaging, signed install paths, publication and recovery. PA01–PA04 are independent of T01–T09. A limited archive-only preview is permissible when described precisely. Full channel coverage requires evidence for every promised installer and target. These added distribution requirements supersede M3 timing for the full distribution milestone; external approval lead times are unknown. M1–M4 below describe delivery of claim checking.
+
 ## Milestones and solo capacity
 
 | Milestone | Indicative focused time | Exit evidence | Fallback |

@@ -9,6 +9,19 @@
 | [Council decisions](council.md) | Which objections changed the plan and what would reopen a choice |
 | [520-point review inventory](review-inventory.md) | Which individual concerns belong to local alpha, release, pilot or later discovery |
 
+## Infrastructure pre-alpha
+
+[Readiness review and comparison with the original brief](readiness-review.md) · [GitHub milestone](https://github.com/valasme/receipts/milestone/1)
+
+This track can finish before the claim checker. Start with PA01 for the requested infrastructure release. Its dependencies are independent of the product tickets below.
+
+| Ticket | Outcome | Blocked by |
+| --- | --- | --- |
+| [PA01](https://github.com/valasme/receipts/issues/11) | Starter CLI and bundled documentation | None |
+| [PA02](https://github.com/valasme/receipts/issues/12) | Same-revision native CI and six-target release candidate | PA01 |
+| [PA03](https://github.com/valasme/receipts/issues/13) | Signed installation and removal across promised channels | PA02 |
+| [PA04](https://github.com/valasme/receipts/issues/14) | Public prerelease, independent consumer checks and correction drill | PA03 |
+
 ## Solo work queue
 
 Take one eligible ticket at a time. Completion means attaching the evidence in the ticket and closing it after its checks pass. The ticket graph permits either T03 or T04 after T02. Prefer T04 first if the object reader's bounds are uncertain. A ready label describes the ticket's completeness; the dependency links still govern when work starts.
