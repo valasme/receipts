@@ -10,11 +10,17 @@ var version = "dev"
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 1 && args[0] == "--version" {
-		fmt.Fprintln(stdout, "receipts", version)
+		if _, err := fmt.Fprintln(stdout, "receipts", version); err != nil {
+			fmt.Fprintln(stderr, "Could not write output.")
+			return 1
+		}
 		return 0
 	}
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h")) {
-		fmt.Fprintln(stdout, "Usage: receipts [--help | --version]")
+		if _, err := fmt.Fprintln(stdout, "Usage: receipts [--help | --version]"); err != nil {
+			fmt.Fprintln(stderr, "Could not write output.")
+			return 1
+		}
 		return 0
 	}
 	fmt.Fprintln(stderr, "Unknown arguments. Run receipts --help for usage.")
