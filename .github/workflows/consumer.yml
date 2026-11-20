@@ -8,6 +8,10 @@ on:
         required: true
         description: Published release tag
         type: string
+      windows_only:
+        description: Repeat just the Windows consumers
+        type: boolean
+        default: false
 permissions:
   contents: read
   attestations: read
@@ -16,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025, windows-11-arm]
+        os: ${{ fromJSON(inputs.windows_only && '["windows-2025","windows-11-arm"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-15","macos-15-intel","windows-2025","windows-11-arm"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -35,7 +39,8 @@ jobs:
           jq -e --arg tag "$TAG" --arg commit "$commit" '.source_tag == $tag and .source_commit == $commit' bundle/build-record.json
           gh attestation verify bundle/build-record.json --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-digest "$(jq -r .workflow_commit bundle/build-record.json)"
           gh attestation verify bundle/checksums.txt --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-digest "$(jq -r .workflow_commit bundle/build-record.json)"
-      - run: python tests/package_smoke.py bundle
+      - id: archive
+        run: python tests/package_smoke.py bundle
         env:
           RECEIPTS_NATIVE_ARCH: ${{ runner.arch }}
       - name: Install the published Homebrew formula
@@ -76,16 +81,25 @@ jobs:
         shell: pwsh
         run: |
           Expand-Archive bundle/preview-installers.zip -DestinationPath manifests
-          if (!(Get-Command winget -ErrorAction SilentlyContinue)) { throw "WinGet unavailable" }
+          if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
+            gh release download v1.29.380 --repo microsoft/winget-cli --dir winget-bootstrap -p DesktopAppInstaller_Dependencies.zip -p Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            Expand-Archive winget-bootstrap/DesktopAppInstaller_Dependencies.zip -DestinationPath winget-bootstrap/deps
+            $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { 'x64' }
+            $deps = @(Get-ChildItem -Recurse winget-bootstrap/deps -Include *.appx,*.msix | Where-Object { $_.FullName -match "[\\/]$arch[\\/]" } | ForEach-Object { $_.FullName })
+            Add-AppxPackage -Path winget-bootstrap/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle -DependencyPath $deps
+            $installer = Get-AppxPackage Microsoft.DesktopAppInstaller
+            $env:PATH = "$($installer.InstallLocation);$env:PATH"
+          }
           winget settings --enable LocalManifestFiles
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           winget install --manifest manifests/winget --scope user --accept-source-agreements --accept-package-agreements --disable-interactivity
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$env:LOCALAPPDATA/Microsoft/WinGet/Links/receipts.exe" --version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          winget uninstall --id Valasme.Receipts.Preview --exact --disable-interactivity
+          winget uninstall --id Valasme.Receipts.Preview --exact --accept-source-agreements --disable-interactivity
       - name: Exercise Scoop preview manifest in an isolated user tree
-        if: runner.os == 'Windows'
+        if: "!cancelled() && runner.os == 'Windows' && steps.archive.outcome == 'success'"
         shell: pwsh
         run: |
           $env:SCOOP = Join-Path $env:RUNNER_TEMP 'receipts-scoop'
