@@ -47,7 +47,7 @@ func normalize(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []b
 
 const resolveCommitHint = " Run git rev-parse --verify 'TAG^{commit}' with your tag or branch, then pass the result to --rev."
 
-func Validate(rev, path string) error {
+func ValidateRevision(rev string) error {
 	if len(rev) == 64 {
 		return errors.New("SHA-256 repositories are unsupported; supply a SHA-1 commit ID")
 	}
@@ -56,6 +56,13 @@ func Validate(rev, path string) error {
 	}
 	if _, err := hex.DecodeString(rev); err != nil {
 		return errors.New("commit ID must be hexadecimal")
+	}
+	return nil
+}
+
+func Validate(rev, path string) error {
+	if err := ValidateRevision(rev); err != nil {
+		return err
 	}
 	if !fs.ValidPath(path) || path == "." || strings.Contains(path, "\\") || (len(path) > 1 && path[1] == ':') || len(path) > 4096 || strings.Count(path, "/") >= 128 {
 		return errors.New("supply a repository-relative file path using slash separators")
@@ -79,8 +86,11 @@ func Verify(ctx context.Context, repo, rev, path string, quote []byte, version s
 	rev = strings.ToLower(rev)
 	digest := sha256.Sum256(quote)
 	r := Receipt{Schema: 1, Version: version, Rule: "utf8-crlf-to-lf-v1", Claim: Claim{"exact_source_quote", rev, path, hex.EncodeToString(digest[:])}, Verdict: "cant_check", Reason: "revision_unavailable"}
-	// A blocking filesystem read can outlive a cooperative deadline. This
-	// process serves one check; return the inconclusive receipt on time.
+	if ctx.Err() != nil {
+		return unresolved(r, errLimit), nil
+	}
+	// A blocking filesystem read can outlive a cooperative deadline.
+	// Return the inconclusive receipt on time.
 	type result struct {
 		receipt Receipt
 		err     error

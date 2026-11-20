@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strings"
-	"time"
 
 	"github.com/valasme/receipts"
 	"github.com/valasme/receipts/internal/check"
@@ -21,11 +20,13 @@ var version = "dev"
 
 const help = `Usage: receipts check --rev COMMIT --path PATH --quote-file FILE [--repo DIR] [--format FORMAT]
        receipts check --claim-file FILE [--repo DIR] [--format FORMAT]
+       receipts check --batch-file FILE [--repo DIR] [--format json]
        receipts --help | --version | --licenses
 
 Check an exact source quotation in a committed file. Use a full SHA-1
 commit ID and a repository-relative path. The repository defaults to ".".
-Pass - as the quote or claim file to read stdin. Formats: text, json, markdown.
+Pass - as a file to read stdin. Single claim formats: text, json, markdown.
+A batch checks up to 16 claims at one commit and returns ordered JSON results.
 A final newline in the quotation is significant.
 
 Create a quote without a trailing newline:
@@ -71,13 +72,13 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	}
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	var repo, rev, path, file, claimFile, format string
+	var repo, rev, path, file, claimFile, batchFile, format string
 	provided := make(map[string]bool)
 	for _, opt := range []struct {
 		name     string
 		dst      *string
 		fallback string
-	}{{"repo", &repo, "."}, {"rev", &rev, ""}, {"path", &path, ""}, {"quote-file", &file, ""}, {"claim-file", &claimFile, ""}, {"format", &format, "text"}} {
+	}{{"repo", &repo, "."}, {"rev", &rev, ""}, {"path", &path, ""}, {"quote-file", &file, ""}, {"claim-file", &claimFile, ""}, {"batch-file", &batchFile, ""}, {"format", &format, "text"}} {
 		*opt.dst = opt.fallback
 		flags.Func(opt.name, "", func(value string) error {
 			if provided[opt.name] {
@@ -92,10 +93,18 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		fmt.Fprintln(stderr, "Invalid check arguments. Run receipts check --help.")
 		return 2
 	}
+	legacyFlags := provided["rev"] || provided["path"] || provided["quote-file"]
+	if provided["batch-file"] {
+		if batchFile == "" || provided["claim-file"] || legacyFlags || (provided["format"] && format != "json") {
+			fmt.Fprintln(stderr, "Supply --batch-file on its own with optional --repo and --format json.")
+			return 2
+		}
+		return executeBatch(ctx, stdin, stdout, stderr, repo, batchFile)
+	}
 	var quote []byte
 	var err error
 	if provided["claim-file"] {
-		if claimFile == "" || provided["rev"] || provided["path"] || provided["quote-file"] {
+		if claimFile == "" || legacyFlags {
 			fmt.Fprintln(stderr, "Supply --claim-file on its own with optional --repo and --format.")
 			return 2
 		}
@@ -124,7 +133,7 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	clock, cancel := context.WithTimeout(ctx, 5*time.Second)
+	clock, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	receipt, err := check.Verify(clock, repo, rev, path, quote, buildVersion())
 	if ctx.Err() != nil {
@@ -135,20 +144,24 @@ func execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
+	if format == "json" {
+		return deliverJSON(stdout, stderr, receipt)
+	}
 	output := receipt.Text()
-	switch format {
-	case "json":
-		data, err := json.Marshal(receipt)
-		if err != nil {
-			fmt.Fprintln(stderr, "Cannot encode receipt.")
-			return 1
-		}
-		output = string(data) + "\n"
-	case "markdown":
+	if format == "markdown" {
 		output = "    " + strings.ReplaceAll(strings.TrimSuffix(output, "\n"), "\n", "\n    ") + "\n"
 	}
 	return deliver(stdout, stderr, output)
 }
+func deliverJSON(stdout, stderr io.Writer, value any) int {
+	data, err := json.Marshal(value)
+	if err != nil {
+		fmt.Fprintln(stderr, "Cannot encode receipt.")
+		return 1
+	}
+	return deliver(stdout, stderr, string(data)+"\n")
+}
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := execute(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
