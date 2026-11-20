@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -57,7 +58,12 @@ def stage(tag, bundle, notes):
             "--notes-file",
             str(notes),
         )
-        release = find_release()
+        # GitHub can acknowledge creation before the release appears in the list.
+        for delay in (0, 1, 2, 4, 8):
+            time.sleep(delay)
+            release = find_release()
+            if release is not None:
+                break
     if not release or not release["prerelease"]:
         raise ValueError("Expected a prerelease for the selected tag.")
     assets = {a["name"]: a for a in release["assets"]}
