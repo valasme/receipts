@@ -26,6 +26,7 @@ type fileObservation struct {
 	commit  string
 	entry   pathEntry
 	failure string
+	detail  string
 }
 
 func VerifyFileChange(ctx context.Context, repo, comparison, head, path string) (FileChangeReceipt, error) {
@@ -43,6 +44,8 @@ func VerifyFileChange(ctx context.Context, repo, comparison, head, path string) 
 	timeout := receipt
 	timeout.comparison.failure = errLimit.Error()
 	timeout.head.failure = errLimit.Error()
+	timeout.comparison.detail = string(timeLimit)
+	timeout.head.detail = string(timeLimit)
 	if ctx.Err() != nil {
 		return timeout, nil
 	}
@@ -72,6 +75,8 @@ func inspectFileChange(ctx context.Context, repo string, receipt FileChangeRecei
 		reason := objectFailure(err, "repository_unavailable")
 		receipt.comparison.failure = reason
 		receipt.head.failure = reason
+		receipt.comparison.detail = failureDetail(err)
+		receipt.head.detail = failureDetail(err)
 		return receipt, nil
 	}
 	defer s.root.Close()
@@ -94,6 +99,7 @@ func inspectFileChange(ctx context.Context, repo string, receipt FileChangeRecei
 func (side *fileObservation) inspect(s *store, path string) error {
 	treeID, err := s.commitTree(side.commit)
 	if err != nil {
+		side.detail = failureDetail(err)
 		switch {
 		case errors.Is(err, errNotCommit):
 			return err
@@ -109,6 +115,7 @@ func (side *fileObservation) inspect(s *store, path string) error {
 	switch {
 	case err != nil:
 		side.failure = objectFailure(err, "object_unavailable")
+		side.detail = failureDetail(err)
 	case entry.id == "":
 		// The verified tree proves this component is absent.
 	case entry.blocked || (entry.mode != "100644" && entry.mode != "100755" && entry.mode != "120000"):
@@ -116,6 +123,7 @@ func (side *fileObservation) inspect(s *store, path string) error {
 	default:
 		if _, err := s.readBlob(entry.id); err != nil {
 			side.failure = objectFailure(err, "object_unavailable")
+			side.detail = failureDetail(err)
 		}
 	}
 	return nil
@@ -153,5 +161,8 @@ func (side fileObservation) writeEvidence(out *strings.Builder, label string) {
 	}
 	if side.failure != "" {
 		fmt.Fprintf(out, "  %s\n", side.failure)
+		if side.detail != "" {
+			fmt.Fprintf(out, "  %s\n", side.detail)
+		}
 	}
 }

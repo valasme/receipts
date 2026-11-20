@@ -81,6 +81,10 @@
       },
       "required": []
     },
+    "detail": {
+      "type": "string",
+      "minLength": 1
+    },
     "verdict": {
       "enum": [
         "verified",

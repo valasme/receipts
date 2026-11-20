@@ -178,27 +178,6 @@ func (s *store) readBlob(id string) ([]byte, error) {
 	return blob.data, nil
 }
 
-func openStore(ctx context.Context, path string) (*store, error) {
-	root, err := os.OpenRoot(path)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := root.Lstat(".git"); err == nil {
-		child, err := root.OpenRoot(".git")
-		root.Close()
-		if err != nil {
-			return nil, errStorage
-		}
-		root = child
-	}
-	info, err := root.Stat("objects")
-	if err != nil || !info.IsDir() {
-		root.Close()
-		return nil, errObject
-	}
-	return &store{root: root, ctx: ctx, budget: newBudget()}, nil
-}
-
 // Git metadata is data only. Restrict opens to ordinary files beneath the root.
 func (s *store) file(name string) (*os.File, error) {
 	if err := s.filesystemOp(); err != nil {
@@ -247,7 +226,16 @@ func (s *store) read(id string) (object, error) {
 	}
 	f, err := s.file("objects/" + id[:2] + "/" + id[2:])
 	if errors.Is(err, fs.ErrNotExist) {
-		return s.packed(id)
+		obj, err := s.packed(id)
+		if err == errObject {
+			if err := s.filesystemOp(); err != nil {
+				return object{}, err
+			}
+			if info, err := s.root.Lstat("objects/info/alternates"); err == nil && info.Size() != 0 {
+				return object{}, errAlternates
+			}
+		}
+		return obj, err
 	}
 	if err != nil {
 		return object{}, err

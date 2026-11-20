@@ -47,7 +47,7 @@ Options:
   --quote-file FILE  Literal UTF-8 quotation, including any final LF.
   --claim-file FILE  One saved claim in schema-major-1 JSON.
   --batch-file FILE  Up to 16 claims at one commit, returned in order.
-  --repo DIR         Local repository (default: current directory).
+  --repo DIR         Clone root or bare repo (default: search upward from here).
   --format FORMAT    text (default), json, or markdown. Batches use json.
 
 Use - for a file read from stdin. CRLF and LF compare equally.
@@ -72,7 +72,7 @@ Options:
   --proposal FILE    JSON proposal with source line ranges.
   --rev COMMIT       Full SHA-1 commit ID (40 hexadecimal digits).
   --compare COMMIT   Full comparison commit ID for file-change claims.
-  --repo DIR         Local repository (default: current directory).
+  --repo DIR         Clone root or bare repo (default: search upward from here).
 
 Use - for one input file to read it from stdin. Each file may be up to 1 MiB.
 
@@ -184,14 +184,14 @@ func executeCheck(ctx context.Context, args []string, stdin io.Reader, stdout, s
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var repo, rev, path, file, claimFile, batchFile, format string
-	provided := registerOptions(flags, stringOption{"repo", &repo, "."}, stringOption{"rev", &rev, ""},
+	provided := registerOptions(flags, stringOption{"repo", &repo, ""}, stringOption{"rev", &rev, ""},
 		stringOption{"path", &path, ""}, stringOption{"quote-file", &file, ""}, stringOption{"claim-file", &claimFile, ""},
 		stringOption{"batch-file", &batchFile, ""}, stringOption{"format", &format, "text"})
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "Invalid check arguments. Run receipts check --help.")
 		return 2
 	}
-	if repo == "" {
+	if provided["repo"] && repo == "" {
 		fmt.Fprintln(stderr, "Invalid check arguments. Supply a directory for --repo, or omit it.")
 		return 2
 	}

@@ -41,6 +41,7 @@ type Receipt struct {
 	Verdict  string   `json:"verdict"`
 	Reason   string   `json:"reason"`
 	Evidence Evidence `json:"evidence"`
+	Detail   string   `json:"detail,omitempty"`
 }
 
 func normalize(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
@@ -48,14 +49,14 @@ func normalize(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []b
 const resolveCommitHint = " Run git rev-parse --verify 'TAG^{commit}' with your tag or branch, then supply the resulting commit ID."
 
 func ValidateRevision(rev string) error {
-	if len(rev) == 64 {
-		return errors.New("SHA-256 repositories are unsupported; supply a SHA-1 commit ID")
-	}
-	if len(rev) != 40 {
+	if len(rev) != 40 && len(rev) != 64 {
 		return errors.New("supply a full 40-digit commit ID." + resolveCommitHint)
 	}
 	if _, err := hex.DecodeString(rev); err != nil {
 		return errors.New("commit ID must be hexadecimal")
+	}
+	if len(rev) == 64 {
+		return errors.New("a 64-digit commit ID has SHA-256 length; supply a full 40-digit SHA-1 commit ID")
 	}
 	return nil
 }
@@ -87,7 +88,7 @@ func Verify(ctx context.Context, repo, rev, path string, quote []byte, version s
 	digest := sha256.Sum256(quote)
 	r := Receipt{Schema: 1, Version: version, Rule: "utf8-crlf-to-lf-v1", Claim: Claim{"exact_source_quote", rev, path, hex.EncodeToString(digest[:])}, Verdict: "cant_check", Reason: "revision_unavailable"}
 	if ctx.Err() != nil {
-		return unresolved(r, errLimit), nil
+		return unresolved(r, timeLimit), nil
 	}
 	// A blocking filesystem read can outlive a cooperative deadline.
 	// Return the inconclusive receipt on time.
@@ -100,11 +101,11 @@ func Verify(ctx context.Context, repo, rev, path string, quote []byte, version s
 	select {
 	case completed := <-done:
 		if ctx.Err() != nil {
-			return unresolved(r, errLimit), nil
+			return unresolved(r, timeLimit), nil
 		}
 		return completed.receipt, completed.err
 	case <-ctx.Done():
-		return unresolved(r, errLimit), nil
+		return unresolved(r, timeLimit), nil
 	}
 }
 
@@ -155,7 +156,7 @@ func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt
 	source := normalize(blob)
 	at := bytes.Index(source, quote)
 	if ctx.Err() != nil {
-		return unresolved(r, errLimit), nil
+		return unresolved(r, timeLimit), nil
 	}
 	if at < 0 {
 		r.Verdict = "contradicted"
@@ -171,6 +172,7 @@ func inspect(ctx context.Context, repo string, r Receipt, quote []byte) (Receipt
 
 func unresolved(r Receipt, err error) Receipt {
 	r.Reason = objectFailure(err, r.Reason)
+	r.Detail = failureDetail(err)
 	return r
 }
 
@@ -182,6 +184,21 @@ func objectFailure(err error, fallback string) string {
 		return errStorage.Error()
 	default:
 		return fallback
+	}
+}
+
+func failureDetail(err error) string {
+	var limit limitError
+	if errors.As(err, &limit) {
+		return string(limit)
+	}
+	switch {
+	case err != errStorage && errors.Is(err, errStorage):
+		return strings.TrimPrefix(err.Error(), errStorage.Error()+": ")
+	case err != errRepository && errors.Is(err, errRepository):
+		return strings.TrimPrefix(err.Error(), errRepository.Error()+": ")
+	default:
+		return ""
 	}
 }
 
@@ -256,5 +273,8 @@ func (r Receipt) Text() string {
 		fmt.Fprintf(&b, "Tree %s · missing %s\n", e.Tree, e.Missing)
 	}
 	fmt.Fprintf(&b, "%s · %s\n", r.Reason, reasons[r.Reason])
+	if r.Detail != "" {
+		fmt.Fprintln(&b, r.Detail)
+	}
 	return b.String()
 }

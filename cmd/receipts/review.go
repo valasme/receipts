@@ -32,10 +32,10 @@ func executeReview(ctx context.Context, args []string, stdin io.Reader, stdout, 
 	flags := flag.NewFlagSet("review", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var repo, rev, comparison, submissionFile, proposalFile string
-	provided := registerOptions(flags, stringOption{"repo", &repo, "."}, stringOption{"rev", &rev, ""},
+	provided := registerOptions(flags, stringOption{"repo", &repo, ""}, stringOption{"rev", &rev, ""},
 		stringOption{"compare", &comparison, ""},
 		stringOption{"submission", &submissionFile, ""}, stringOption{"proposal", &proposalFile, ""})
-	if flags.Parse(args) != nil || flags.NArg() != 0 || repo == "" || submissionFile == "" || proposalFile == "" || (submissionFile == "-" && proposalFile == "-") {
+	if flags.Parse(args) != nil || flags.NArg() != 0 || (provided["repo"] && repo == "") || submissionFile == "" || proposalFile == "" || (submissionFile == "-" && proposalFile == "-") {
 		fmt.Fprintln(stderr, "Supply --submission, --proposal, and --rev. At most one input may use stdin. Run receipts review --help.")
 		return 2
 	}

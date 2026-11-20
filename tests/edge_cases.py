@@ -114,6 +114,12 @@ def suite(repo):
             r.returncode == 2 and not r.stdout and str(quote).encode() not in r.stderr
         )
     args = [binary, "check", "--rev", rev, "--path", name, "--quote-file", "-"]
+    nested = repo / "nested" / "deep"
+    nested.mkdir(parents=True)
+    r = subprocess.run(args, cwd=nested, input=b"aa", capture_output=True)
+    assert r.returncode == 0 and r.stdout.startswith(b"Verified"), r
+    r = subprocess.run(args + ["--repo", "."], cwd=nested, input=b"aa", capture_output=True)
+    assert r.returncode == 0 and b"repository_unavailable" in r.stdout, r
     if Path("/dev/full").exists():
         with open("/dev/full", "wb") as full:
             r = subprocess.run(
@@ -144,7 +150,66 @@ def suite(repo):
     assert check(repo, broad, "absent", b"x")["reason"] == "resource_limit"
 
 
+def storage_selection(root):
+    repo = root / "clone"
+    repo.mkdir()
+    git(repo, "init", "-q", "--object-format=sha1")
+    (repo / "item").write_bytes(b"original")
+    git(repo, "add", "item")
+    git(repo, "commit", "-qm", "initial")
+    rev = git(repo, "rev-parse", "HEAD")
+    baseline = check(repo, rev, "item", b"original")
+    bare = root / "bare.git"
+    git(root, "clone", "-q", "--bare", "--no-local", str(repo), str(bare))
+    git(bare, "repack", "-Adq")
+    git(bare, "prune-packed")
+    assert list((bare / "objects" / "pack").glob("*.idx"))
+    assert check(bare, rev, "item", b"original") == baseline
+
+    (repo / "item").write_bytes(b"replacement")
+    git(repo, "commit", "-qam", "replacement")
+    replacement = git(repo, "rev-parse", "HEAD")
+    git(repo, "replace", rev, replacement)
+    assert git(repo, "cat-file", "blob", f"{rev}:item") == "replacement"
+    assert git(repo, "--no-replace-objects", "cat-file", "blob", f"{rev}:item") == "original"
+    assert check(repo, rev, "item", b"original") == baseline
+
+    linked = root / "linked"
+    git(repo, "worktree", "add", "-q", "--detach", str(linked), replacement)
+    separate = root / "separate"
+    git(root, "init", "-q", "--separate-git-dir", str(root / "gitdir"), str(separate))
+    for path in [linked, separate]:
+        r = check(path, rev, "item", b"original")
+        assert r["reason"] == "unsupported_storage" and "clone or bare" in r["detail"], r
+
+    assert check(root, rev, "item", b"x")["reason"] == "repository_unavailable"
+    assert check(root / "missing", rev, "item", b"x")["reason"] == "repository_unavailable"
+    (repo / ".git" / "objects").rename(repo / ".git" / "objects-old")
+    r = check(repo, rev, "item", b"x")
+    assert r["reason"] == "repository_unavailable" and "object directory" in r["detail"], r
+    (repo / ".git" / "objects").mkdir()
+    alt = repo / ".git" / "objects" / "info"
+    alt.mkdir()
+    (alt / "alternates").write_text(str(bare / "objects") + "\n", encoding="utf-8")
+    r = check(repo, rev, "item", b"x")
+    assert r["reason"] == "unsupported_storage" and "alternate" in r["detail"], r
+
+    sha256 = root / "sha256"
+    git(root, "init", "-q", "--object-format=sha256", str(sha256))
+    r = check(sha256, rev, "item", b"x")
+    assert r["reason"] == "unsupported_storage" and "SHA-256" in r["detail"], r
+    for malformed, diagnostic in [("g" * 64, b"hexadecimal"), ("0" * 64, b"SHA-256")]:
+        r = subprocess.run(
+            [binary, "check", "--repo", sha256, "--rev", malformed, "--path", "item",
+             "--quote-file", "-"],
+            input=b"x", capture_output=True,
+        )
+        assert r.returncode == 2 and not r.stdout and diagnostic in r.stderr, r
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="receipts ü ") as directory:
         suite(Path(directory))
-    print("Edge, permission, privacy and tree limit checks passed.")
+    with tempfile.TemporaryDirectory() as directory:
+        storage_selection(Path(directory))
+    print("Edge, repository discovery, object formats, privacy and tree limits passed.")
