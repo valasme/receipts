@@ -32,6 +32,8 @@ nfpms:
     license: Apache-2.0
     mtime: "{{ .CommitDate }}"
     formats: [deb, rpm]
+    rpm:
+      buildhost: receipts
     contents:
       - src: LICENSE
         dst: /usr/share/doc/receipts/copyright
