@@ -6,10 +6,19 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    flags: [-trimpath]
+    mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags: [-s, -w, "-X main.version={{ .Version }}"]
 archives:
   - formats: [tar.gz]
-    files: [README.md, LICENSE, THIRD-PARTY-NOTICES.txt]
+    files:
+      - src: README.md
+        info: {mtime: "{{ .CommitDate }}", mode: 0644, owner: root, group: root}
+      - src: LICENSE
+        info: {mtime: "{{ .CommitDate }}", mode: 0644, owner: root, group: root}
+      - src: THIRD-PARTY-NOTICES.txt
+        info: {mtime: "{{ .CommitDate }}", mode: 0644, owner: root, group: root}
+    builds_info: {owner: root, group: root}
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -21,20 +30,25 @@ nfpms:
     homepage: https://github.com/valasme/receipts
     description: Offline exact source quotation checker
     license: Apache-2.0
+    mtime: "{{ .CommitDate }}"
     formats: [deb, rpm]
     contents:
       - src: LICENSE
         dst: /usr/share/doc/receipts/copyright
         packager: deb
+        file_info: {mtime: "{{ .CommitDate }}", mode: 0644}
       - src: THIRD-PARTY-NOTICES.txt
         dst: /usr/share/doc/receipts/THIRD-PARTY-NOTICES.txt
         packager: deb
+        file_info: {mtime: "{{ .CommitDate }}", mode: 0644}
       - src: LICENSE
         dst: /usr/share/licenses/receipts/LICENSE
         packager: rpm
+        file_info: {mtime: "{{ .CommitDate }}", mode: 0644}
       - src: THIRD-PARTY-NOTICES.txt
         dst: /usr/share/licenses/receipts/THIRD-PARTY-NOTICES.txt
         packager: rpm
+        file_info: {mtime: "{{ .CommitDate }}", mode: 0644}
 release:
   draft: true
   prerelease: auto
